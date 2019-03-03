@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.13)
 project(filesystem C)
 
 set(CMAKE_C_STANDARD 99)
+set(EXECUTABLE_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/bin")
 
-add_executable(filesystem src/main.c src/syscalls.h src/syscalls.c src/blocks.h src/types.h src/vm.h src/vm.c)
-add_executable(utils src/utils.c src/utils.h src/vm.h src/vm.c src/blocks.h src/types.h)
+enable_testing()
+
+add_subdirectory(src)
+add_subdirectory(test)

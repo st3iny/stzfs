@@ -1,14 +1,14 @@
 # cmake
 CMakeFiles
 cmake-build-debug
-cmake_install.cmake
+**/*.cmake
 CMakeCache.txt
 Makefile
 filesystem.cbp
+Testing
 
 # clion
 .idea
 
 # binaries
-filesystem
-utils
+bin
