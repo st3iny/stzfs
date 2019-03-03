@@ -1,8 +1,9 @@
 #ifndef FILESYSTEM_BLOCKS_H
 #define FILESYSTEM_BLOCKS_H
 
-#include <stdint.h>
 #include <bits/types/time_t.h>
+#include <stdint.h>
+
 #include "types.h"
 
 typedef struct super_block {
@@ -17,7 +18,7 @@ typedef struct super_block {
     inodeptr_t inode_count;
 
     int8_t padding[BLOCK_SIZE - sizeof(blockptr_t) * 8 - sizeof(inodeptr_t)];
-} super_block;
+} __attribute__ ((packed)) super_block;
 
 // 128 bytes
 typedef struct inode {
@@ -34,34 +35,37 @@ typedef struct inode {
     blockptr_t data_single_indirect;
     blockptr_t data_double_indirect;
     blockptr_t data_triple_indirect;
-} inode;
+} __attribute__ ((packed)) inode;
 
 #define INODE_SIZE sizeof(inode)
 
 typedef struct inode_block {
     inode inodes[BLOCK_SIZE / sizeof(inode)];
-} inode_block;
+} __attribute__ ((packed)) inode_block;
 
+// 256 bytes
 typedef struct dir_block_entry {
     filename_t name[MAX_FILENAME_LENGTH];
     inodeptr_t inode;
-} dir_block_entry;
+} __attribute__ ((packed)) dir_block_entry;
 
 typedef struct dir_block {
     uint8_t length;
     dir_block_entry entries[BLOCK_SIZE / sizeof(dir_block_entry) - 1];
-} dir_block;
+
+    int8_t padding[sizeof(dir_block_entry) - sizeof(uint8_t)];
+} __attribute__ ((packed)) dir_block;
 
 typedef struct indirect_block {
     blockptr_t blocks[BLOCK_SIZE / sizeof(blockptr_t)];
-} indirect_block;
+} __attribute__ ((packed)) indirect_block;
 
 typedef struct bitmap_block {
     uint64_t bitmap[BLOCK_SIZE / 8];
-} bitmap_block;
+} __attribute__ ((packed)) bitmap_block;
 
 typedef struct data_block {
     uint8_t data[BLOCK_SIZE];
-} data_block;
+} __attribute__ ((packed)) data_block;
 
 #endif // FILESYSTEM_BLOCKS_H
