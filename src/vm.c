@@ -47,7 +47,7 @@ off_t vm_config_set_file(const char* path) {
 }
 
 // low level methods
-int vm_write(off_t addr, const int8_t* buffer, size_t length) {
+int vm_write(off_t addr, const void* buffer, size_t length) {
     if (fd == -1) {
         VM_LOG("Virtual hard disk not created.");
         return -1;
@@ -62,7 +62,7 @@ int vm_write(off_t addr, const int8_t* buffer, size_t length) {
     return write(fd, buffer, length);
 }
 
-int vm_read(off_t addr, int8_t* buffer, size_t length) {
+int vm_read(off_t addr, void* buffer, size_t length) {
     if (fd == -1) {
         VM_LOG("Virtual hard disk not created.");
         return -1;

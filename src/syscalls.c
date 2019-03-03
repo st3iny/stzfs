@@ -2,28 +2,31 @@
 #include <string.h>
 #include <time.h>
 
+#include "blocks.h"
 #include "syscalls.h"
 #include "vm.h"
+
+
+// write to disk
+blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t bitmap_length);
+blockptr_t alloc_block(const void* new_block);
+inodeptr_t alloc_inode(const inode* new_inode);
+
+// create in memory
+void create_dir_block(dir_block* block, inodeptr_t inodeptr, inodeptr_t parent_inodeptr);
+
+// misc helpers
+uint32_t uint32_div_ceil(uint32_t a, uint32_t b);
+
 
 blockptr_t sys_makefs(inodeptr_t inode_count) {
     blockptr_t blocks = vm_size() / BLOCK_SIZE;
     printf("SYS: Creating file system with %i blocks and %i inodes.\n", blocks, inode_count);
 
     // calculate bitmap and inode table lengths
-    blockptr_t block_bitmap_length = blocks / (BLOCK_SIZE * 8);
-    if (blocks % (BLOCK_SIZE * 8) > 0) {
-        block_bitmap_length++;
-    }
-
-    inodeptr_t inode_table_length = inode_count / (BLOCK_SIZE / sizeof(inode));
-    if (inode_count % (BLOCK_SIZE / sizeof(inode)) > 0) {
-        inode_table_length++;
-    }
-
-    inodeptr_t inode_bitmap_length = inode_count / (BLOCK_SIZE * 8);
-    if (inode_count % (BLOCK_SIZE * 8) > 0) {
-        inode_bitmap_length++;
-    }
+    blockptr_t block_bitmap_length = uint32_div_ceil(blocks, BLOCK_SIZE * 8);
+    inodeptr_t inode_table_length = uint32_div_ceil(inode_count, BLOCK_SIZE / sizeof(inode));
+    inodeptr_t inode_bitmap_length = uint32_div_ceil(inode_count, BLOCK_SIZE * 8);
 
     const blockptr_t initial_block_count = 1 + block_bitmap_length + inode_bitmap_length + inode_table_length;
 
@@ -41,10 +44,10 @@ blockptr_t sys_makefs(inodeptr_t inode_count) {
     sb.inode_count = inode_count;
 
     // initialize all bitmaps and inode table with zeroes
+    data_block initial_block;
+    memset(&initial_block, 0, BLOCK_SIZE);
     for (blockptr_t blockptr = 0; blockptr < initial_block_count; blockptr++) {
-        data_block block;
-        memset(&block, 0, BLOCK_SIZE);
-        vm_write(blockptr * BLOCK_SIZE, &block, BLOCK_SIZE);
+        vm_write(blockptr * BLOCK_SIZE, &initial_block, BLOCK_SIZE);
     }
     printf("SYS: Wrote %i initial blocks.\n", initial_block_count);
 
@@ -76,9 +79,9 @@ blockptr_t sys_makefs(inodeptr_t inode_count) {
     // write superblock
     vm_write(0, &sb, BLOCK_SIZE);
 
-    // write empty root directory block
+    // write root directory block
     dir_block root_dir_block;
-    memset(&root_dir_block, 0, BLOCK_SIZE);
+    create_dir_block(&root_dir_block, 1, 0);
     blockptr_t root_dir_block_ptr = alloc_block(&root_dir_block);
     printf("SYS: Wrote root dir block at %i.\n", root_dir_block_ptr);
 
@@ -104,7 +107,6 @@ blockptr_t sys_makefs(inodeptr_t inode_count) {
     return blocks;
 }
 
-
 // fd_t sys_open(const filename_t* path);
 // int sys_close(fd_t fd);
 // unsigned int sys_write(fd_t fd, buffer_t* buffer, fileptr_t offset, fileptr_t length);
@@ -114,7 +116,6 @@ blockptr_t sys_makefs(inodeptr_t inode_count) {
 // int sys_rename(const filename_t* src, const filename_t* dst);
 // int sys_unlink(const filename_t* path);
 
-// helpers
 blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t bitmap_length) {
     // get next free block
     bitmap_block ba;
@@ -156,7 +157,7 @@ blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t 
     return next_free;
 }
 
-blockptr_t alloc_block(const data_block* new_block) {
+blockptr_t alloc_block(const void* new_block) {
     super_block sb;
     vm_read(0, &sb, BLOCK_SIZE);
 
@@ -184,4 +185,23 @@ inodeptr_t alloc_inode(const inode* new_inode) {
     vm_write(inode_table_blockptr * BLOCK_SIZE, &inode_table_block, BLOCK_SIZE);
 
     return next_free_inode;
+}
+
+void create_dir_block(dir_block* block, inodeptr_t inodeptr, inodeptr_t parent_inodeptr) {
+    memset(block, 0, BLOCK_SIZE);
+    block->length = 1;
+    block->entries[0] = (dir_block_entry) {.name = ".", .inode = inodeptr};
+    if (parent_inodeptr) {
+        block->entries[1] = (dir_block_entry) {.name = "..", .inode = parent_inodeptr};
+        block->length++;
+    }
+}
+
+// integer divide a / b and ceil of a % b > 0
+uint32_t uint32_div_ceil(uint32_t a, uint32_t b) {
+    uint32_t result = a / b;
+    if (a % b > 0) {
+        result++;
+    }
+    return result;
 }
