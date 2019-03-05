@@ -154,7 +154,7 @@ int sys_release(const char* file_path, struct fuse_file_info* file_info) {}
 // read from a file
 int sys_read(const char* file_path, char* buffer, size_t length, off_t offset,
              struct fuse_file_info* file_info) {
-    printf("FUSE: read from file %s\n", file_path);
+    // printf("FUSE: read from file %s\n", file_path);
 
     if (file_info->fh == 0) {
         printf("FUSE: invald file handle (inode)\n");
@@ -170,6 +170,8 @@ int sys_read(const char* file_path, char* buffer, size_t length, off_t offset,
         printf("FUSE: offset out of bounds\n");
         return -ESPIPE;
     }
+
+    // FIXME: first partial block
 
     size_t max_bytes = inode.atom_count < length ? inode.atom_count : length;
     size_t read_bytes = 0;
@@ -617,50 +619,55 @@ blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
     typedef struct level {
         blockptr_t* blockptr;
         indirect_block block;
+        int changed;
     } level;
 
     blockptr_t offset = inode->block_count;
     blockptr_t blockptr = alloc_block(block);
     if (offset < INODE_DIRECT_BLOCKS) {
         inode->data_direct[offset] = blockptr;
-        inode->block_count++;
     } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
         level level1 = {.blockptr = &inode->data_single_indirect};
-        if (read_or_alloc_block(level1.blockptr, &level1.block)) inode->block_count++;
+        read_or_alloc_block(level1.blockptr, &level1.block);
 
         level1.block.blocks[offset] = blockptr;
 
         write_block(*level1.blockptr, &level1.block);
     } else if ((offset -= INODE_SINGLE_INDIRECT_BLOCKS) < INODE_DOUBLE_INDIRECT_BLOCKS) {
         level level1 = {.blockptr = &inode->data_double_indirect};
-        if (read_or_alloc_block(level1.blockptr, &level1.block)) inode->block_count++;
+        if (read_or_alloc_block(level1.blockptr, &level1.block)) level1.changed = 1;
 
         level level2 = {.blockptr = &level1.block.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS]};
-        if (read_or_alloc_block(level2.blockptr, &level2.block)) inode->block_count++;
+        if (read_or_alloc_block(level2.blockptr, &level2.block)) level1.changed = 1;
 
         level2.block.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS] = blockptr;
 
-        write_block(*level1.blockptr, &level1.block);
+        if (level1.changed) write_block(*level1.blockptr, &level1.block);
         write_block(*level2.blockptr, &level2.block);
     } else if ((offset -= INODE_DOUBLE_INDIRECT_BLOCKS) < INODE_TRIPLE_INDIRECT_BLOCKS) {
         level level1 = {.blockptr = &inode->data_triple_indirect};
-        if (read_or_alloc_block(level1.blockptr, &level1.block)) inode->block_count++;
+        if (read_or_alloc_block(level1.blockptr, &level1.block)) level1.changed = 1;
 
         level level2 = {.blockptr = &level1.block.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS]};
-        if (read_or_alloc_block(level2.blockptr, &level2.block)) inode->block_count++;
+        if (read_or_alloc_block(level2.blockptr, &level2.block)) {
+            level1.changed = 1;
+            level2.changed = 1;
+        }
 
         level level3 = {.blockptr = &level2.block.blocks[offset % INODE_DOUBLE_INDIRECT_BLOCKS]};
-        if (read_or_alloc_block(level3.blockptr, &level3.block)) inode->block_count++;
+        if (read_or_alloc_block(level3.blockptr, &level3.block)) level2.changed = 1;
 
         level3.block.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS] = blockptr;
 
-        write_block(*level1.blockptr, &level1.block);
-        write_block(*level2.blockptr, &level2.block);
+        if (level1.changed) write_block(*level1.blockptr, &level1.block);
+        if (level2.changed) write_block(*level2.blockptr, &level2.block);
         write_block(*level3.blockptr, &level3.block);
     } else {
         printf("SYS: relative data blockptr out of bounds\n");
     }
 
+    // one block is allocated in each case
+    inode->block_count++;
     return blockptr;
 }
 
