@@ -3,9 +3,9 @@
 
 #include <stdint.h>
 
-#define EOF -1
-#define BLOCK_SIZE 4096 // 4 KiB
-#define MAX_FILENAME_LENGTH 256 - sizeof(inodeptr_t) // 251 characters
+#define EOF (-1)
+#define BLOCK_SIZE (4096) // 4 KiB
+#define MAX_FILENAME_LENGTH (256 - sizeof(inodeptr_t)) // 251 characters
 
 // file modes
 #define M_RU  0b1000000000000 // user read
@@ -19,11 +19,8 @@
 #define M_XO  0b0000000010000 // others execute
 #define M_DIR 0b0000000001000 // directory
 
-typedef int      buffer_t;
 typedef int8_t   filename_t;
-typedef uint16_t fd_t;
 typedef uint32_t inodeptr_t;
 typedef uint32_t blockptr_t;
-typedef uint64_t fileptr_t;
 
 #endif // FILESYSTEM_TYPES_H

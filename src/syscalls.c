@@ -18,7 +18,7 @@ blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset);
 void read_block(blockptr_t blockptr, void* block);
 void read_inode(inodeptr_t inodeptr, inode_t* inode);
 blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* block);
-void read_inode_data_blocks(inode_t* inode, void* data_block_array);
+void read_inode_data_blocks(const inode_t* inode, void* data_block_array);
 
 // alloc in bitmap
 blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t bitmap_length);
@@ -340,7 +340,7 @@ blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* 
 }
 
 // read all data blocks of an inode
-void read_inode_data_blocks(inode_t* inode, void* data_block_array) {
+void read_inode_data_blocks(const inode_t* inode, void* data_block_array) {
     int data_offset = 0;
     data_block* data_blocks = (data_block*)data_block_array;
 
