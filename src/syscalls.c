@@ -34,6 +34,7 @@ blockptr_t write_inode_data_block(const inode_t* inode, blockptr_t offset, const
 
 // misc helpers
 uint32_t uint32_div_ceil(uint32_t a, uint32_t b);
+int read_or_alloc_block(blockptr_t* blockptr, void* block);
 
 blockptr_t sys_makefs(inodeptr_t inode_count) {
     blockptr_t blocks = vm_size() / BLOCK_SIZE;
@@ -147,6 +148,132 @@ int sys_open(const char* file_path, struct fuse_file_info* file_info) {
     }
 }
 
+// close a file
+int sys_release(const char* file_path, struct fuse_file_info* file_info) {}
+
+// read from a file
+int sys_read(const char* file_path, char* buffer, size_t length, off_t offset,
+             struct fuse_file_info* file_info) {
+    printf("FUSE: read from file %s\n", file_path);
+
+    if (file_info->fh == 0) {
+        printf("FUSE: invald file handle (inode)\n");
+        return -EFAULT;
+    }
+
+    inodeptr_t inodeptr = file_info->fh;
+    inode_t inode;
+    read_inode(inodeptr, &inode);
+
+    // check file bounds
+    if (offset >= inode.atom_count) {
+        printf("FUSE: offset out of bounds\n");
+        return -ESPIPE;
+    }
+
+    size_t max_bytes = inode.atom_count < length ? inode.atom_count : length;
+    size_t read_bytes = 0;
+    for (blockptr_t block_offset = 0; block_offset < inode.block_count; block_offset++) {
+        data_block block;
+        read_inode_data_block(&inode, block_offset, &block);
+
+        size_t diff = max_bytes - read_bytes;
+        if (diff <= 0) {
+            break;
+        } else if (diff > 0 && diff < BLOCK_SIZE) {
+            memcpy(&buffer, &block, diff);
+            read_bytes += diff;
+        } else {
+            memcpy(&buffer, &block, BLOCK_SIZE);
+            read_bytes += BLOCK_SIZE;
+        }
+    }
+
+    return read_bytes;
+}
+
+// write to a file
+int sys_write(const char* file_path, const char* buffer, size_t length, off_t offset,
+              struct fuse_file_info* file_info) {
+    // printf("FUSE: write to file %s\n", file_path);
+
+    if (file_info->fh == 0) {
+        printf("FUSE: invald file handle (inode)\n");
+        return -EFAULT;
+    }
+
+    inodeptr_t inodeptr = file_info->fh;
+    inode_t inode;
+    read_inode(inodeptr, &inode);
+
+    // check file size limits
+    size_t max_block_offset = uint32_div_ceil(offset + length, BLOCK_SIZE);
+    if (max_block_offset >= INODE_MAX_BLOCKS) {
+        printf("FUSE: max file size exceeded\n");
+        return -EFBIG;
+    }
+
+    // check continuity
+    if (offset > inode.atom_count) {
+        printf("FUSE: offset too high\n");
+        return -ESPIPE;
+    }
+
+    // write first partial block
+    size_t written_bytes = 0;
+    size_t initial_offset = offset / BLOCK_SIZE;
+    size_t initial_byte_offset = offset % BLOCK_SIZE;
+    if (initial_byte_offset > 0) {
+        data_block block;
+        if (initial_offset >= inode.block_count) {
+            memset(&block, 0, BLOCK_SIZE);
+        } else {
+            read_inode_data_block(&inode, initial_offset, &block);
+        }
+
+        // keep block boundaries
+        written_bytes = BLOCK_SIZE - initial_byte_offset;
+        if (written_bytes > length) {
+            written_bytes = length;
+        }
+        memcpy(&block.data[initial_byte_offset], buffer, written_bytes);
+
+        if (initial_offset >= inode.block_count) {
+            alloc_inode_data_block(&inode, &block);
+        } else {
+            write_inode_data_block(&inode, initial_offset, &block);
+        }
+
+        initial_offset++;
+    }
+
+    // write aligned data
+    for (blockptr_t block_offset = initial_offset; block_offset < max_block_offset; block_offset++) {
+        data_block block;
+        size_t diff = length - written_bytes;
+        if (diff <= 0) {
+            break;
+        } else if (diff > 0 && diff < BLOCK_SIZE) {
+            memcpy(&block, buffer, diff);
+            memset(&block.data[diff], 0, BLOCK_SIZE - diff);
+            written_bytes += diff;
+        } else {
+            memcpy(&block, buffer, BLOCK_SIZE);
+            written_bytes += BLOCK_SIZE;
+        }
+
+        if (block_offset >= inode.block_count) {
+            alloc_inode_data_block(&inode, &block);
+        } else {
+            write_inode_data_block(&inode, block_offset, &block);
+        }
+    }
+
+    inode.atom_count += written_bytes;
+    write_inode(inodeptr, &inode);
+    return written_bytes;
+}
+
 // create new file and open it
 int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_info) {
     printf("FUSE: create %s\n", file_path);
@@ -154,7 +281,7 @@ int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_i
     inodeptr_t inodeptr, parent_inodeptr;
     inode_t inode, parent_inode;
     char last_name[2048];
-    int err = find_file_inode(file_path, &inodeptr, &inode, &parent_inodeptr, &parent_inode, &last_name);
+    int err = find_file_inode(file_path, &inodeptr, &inode, &parent_inodeptr, &parent_inode, last_name);
     if (err) return err;
 
     if (inodeptr != 0) {
@@ -170,15 +297,12 @@ int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_i
         inode.mtime = now;
         inode.link_count = 1;
         inodeptr = alloc_inode(&inode);
-        alloc_dir_entry(&parent_inode, &last_name, inodeptr);
+        alloc_dir_entry(&parent_inode, last_name, inodeptr);
         write_inode(parent_inodeptr, &parent_inode);
         file_info->fh = inodeptr;
         return 0;
     }
 }
-
-// close a file
-int sys_release(const char* file_path, struct fuse_file_info* file_info) {}
 
 // find the inode linked to given path
 int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
@@ -193,8 +317,8 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
     int not_existing = 0;
     // char* full_name = (char*)malloc(2048 * sizeof(char));
     char full_name[2048];
-    strcpy(&full_name, file_path);
-    char* name = strtok(&full_name, "/");
+    strcpy(full_name, file_path);
+    char* name = strtok(full_name, "/");
     do {
         printf("Searching for %s\n", name);
 
@@ -273,11 +397,11 @@ blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset) {
     blockptr_t absolute_blockptr;
     if (offset < INODE_DIRECT_BLOCKS) {
         absolute_blockptr = inode->data_direct[offset];
-    } else if (offset -= INODE_DIRECT_BLOCKS < INODE_SINGLE_INDIRECT_BLOCKS) {
+    } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
         indirect_block ind_block;
         read_block(inode->data_single_indirect, &ind_block);
         absolute_blockptr = ind_block.blocks[offset];
-    } else if (offset -= INODE_SINGLE_INDIRECT_BLOCKS < INODE_DOUBLE_INDIRECT_BLOCKS) {
+    } else if ((offset -= INODE_SINGLE_INDIRECT_BLOCKS) < INODE_DOUBLE_INDIRECT_BLOCKS) {
         indirect_block level1;
         read_block(inode->data_double_indirect, &level1);
         blockptr_t level2_blockptr= level1.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS];
@@ -285,7 +409,7 @@ blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset) {
         indirect_block level2;
         read_block(level2_blockptr, &level2);
         absolute_blockptr = level2.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS];
-    } else if (offset -= INODE_DOUBLE_INDIRECT_BLOCKS < INODE_TRIPLE_INDIRECT_BLOCKS) {
+    } else if ((offset -= INODE_DOUBLE_INDIRECT_BLOCKS) < INODE_TRIPLE_INDIRECT_BLOCKS) {
         indirect_block level1;
         read_block(inode->data_triple_indirect, &level1);
         blockptr_t level2_blockptr = level1.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS];
@@ -297,6 +421,9 @@ blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset) {
         indirect_block level3;
         read_block(level3_blockptr, &level3);
         absolute_blockptr = level3.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS];
+    } else {
+        printf("SYS: relative data blockptr out of bounds\n");
+        absolute_blockptr = 0;
     }
 
     return absolute_blockptr;
@@ -486,37 +613,54 @@ blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
         return 0;
     }
 
+    // level struct for indirection convenience
+    typedef struct level {
+        blockptr_t* blockptr;
+        indirect_block block;
+    } level;
+
     blockptr_t offset = inode->block_count;
     blockptr_t blockptr = alloc_block(block);
     if (offset < INODE_DIRECT_BLOCKS) {
         inode->data_direct[offset] = blockptr;
-    } else if (offset -= INODE_DIRECT_BLOCKS < INODE_SINGLE_INDIRECT_BLOCKS) {
-        indirect_block ind_block;
-        read_block(inode->data_single_indirect, &ind_block);
-        ind_block.blocks[offset] = blockptr;
-    } else if (offset -= INODE_SINGLE_INDIRECT_BLOCKS < INODE_DOUBLE_INDIRECT_BLOCKS) {
-        indirect_block level1;
-        read_block(inode->data_double_indirect, &level1);
-        blockptr_t level2_blockptr= level1.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS];
+        inode->block_count++;
+    } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
+        level level1 = {.blockptr = &inode->data_single_indirect};
+        if (read_or_alloc_block(level1.blockptr, &level1.block)) inode->block_count++;
 
-        indirect_block level2;
-        read_block(level2_blockptr, &level2);
-        level2.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS] = blockptr;
-    } else if (offset -= INODE_DOUBLE_INDIRECT_BLOCKS < INODE_TRIPLE_INDIRECT_BLOCKS) {
-        indirect_block level1;
-        read_block(inode->data_triple_indirect, &level1);
-        blockptr_t level2_blockptr = level1.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS];
+        level1.block.blocks[offset] = blockptr;
 
-        indirect_block level2;
-        read_block(level2_blockptr, &level2);
-        blockptr_t level3_blockptr = level2.blocks[offset % INODE_DOUBLE_INDIRECT_BLOCKS];
+        write_block(*level1.blockptr, &level1.block);
+    } else if ((offset -= INODE_SINGLE_INDIRECT_BLOCKS) < INODE_DOUBLE_INDIRECT_BLOCKS) {
+        level level1 = {.blockptr = &inode->data_double_indirect};
+        if (read_or_alloc_block(level1.blockptr, &level1.block)) inode->block_count++;
 
-        indirect_block level3;
-        read_block(level3_blockptr, &level3);
-        level3.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS] = blockptr;
+        level level2 = {.blockptr = &level1.block.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS]};
+        if (read_or_alloc_block(level2.blockptr, &level2.block)) inode->block_count++;
+
+        level2.block.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS] = blockptr;
+
+        write_block(*level1.blockptr, &level1.block);
+        write_block(*level2.blockptr, &level2.block);
+    } else if ((offset -= INODE_DOUBLE_INDIRECT_BLOCKS) < INODE_TRIPLE_INDIRECT_BLOCKS) {
+        level level1 = {.blockptr = &inode->data_triple_indirect};
+        if (read_or_alloc_block(level1.blockptr, &level1.block)) inode->block_count++;
+
+        level level2 = {.blockptr = &level1.block.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS]};
+        if (read_or_alloc_block(level2.blockptr, &level2.block)) inode->block_count++;
+
+        level level3 = {.blockptr = &level2.block.blocks[offset % INODE_DOUBLE_INDIRECT_BLOCKS]};
+        if (read_or_alloc_block(level3.blockptr, &level3.block)) inode->block_count++;
+
+        level3.block.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS] = blockptr;
+
+        write_block(*level1.blockptr, &level1.block);
+        write_block(*level2.blockptr, &level2.block);
+        write_block(*level3.blockptr, &level3.block);
+    } else {
+        printf("SYS: relative data blockptr out of bounds\n");
     }
 
-    inode->block_count++;
     return blockptr;
 }
 
@@ -569,4 +713,16 @@ uint32_t uint32_div_ceil(uint32_t a, uint32_t b) {
         result++;
     }
     return result;
+}
+
+// read block from blockptr if not zero or init the block with zeroes
+int read_or_alloc_block(blockptr_t* blockptr, void* block) {
+    if (*blockptr) {
+        read_block(*blockptr, block);
+        return 0;
+    } else {
+        memset(block, 0, BLOCK_SIZE);
+        *blockptr = alloc_block(block);
+        return 1;
+    }
 }

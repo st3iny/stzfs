@@ -10,10 +10,10 @@
 
 // global vars
 static int fd = -1; // file descriptor
-static off_t size = -1; // total virtual hard disk size
+static long size = -1; // total virtual hard disk size
 
 // config
-int vm_config_create_file(const char* path, off_t length) {
+int vm_config_create_file(const char* path, long length) {
     int oflag = O_CREAT | O_WRONLY;
     mode_t mode = S_IRUSR | S_IWUSR;
     fd = open(path, oflag, mode);
