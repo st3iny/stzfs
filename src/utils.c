@@ -120,7 +120,7 @@ void utils_print_inode(const char* arg) {
 
     inode_block inode_table_block;
     vm_read((sb.inode_table + inode_table_block_offset) * BLOCK_SIZE, &inode_table_block, BLOCK_SIZE);
-    inode* inode_data = &inode_table_block.inodes[inodeptr % (BLOCK_SIZE / INODE_SIZE)];
+    inode_t* inode_data = &inode_table_block.inodes[inodeptr % (BLOCK_SIZE / INODE_SIZE)];
 
     printf("inode@%i = {\n", inodeptr);
     printf("\tmode = %o\n", inode_data->mode);
@@ -140,8 +140,8 @@ void utils_print_inode(const char* arg) {
     printf("\tmtime = %lu (%s)\n", inode_data->mtime, pretty_time);
 
     printf("\tlink_count = %i\n", inode_data->link_count);
-    printf("\tbyte_length = %lu\n", inode_data->byte_length);
-    printf("\tblock_length = %i\n", inode_data->block_length);
+    printf("\tatom_count = %lu\n", inode_data->atom_count);
+    printf("\tblock_count = %i\n", inode_data->block_count);
 
     printf("\tdata_direct = [");
     for (int i = 0; i < 20; i++) {

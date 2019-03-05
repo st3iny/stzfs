@@ -1,3 +1,5 @@
+#define FUSE_USE_VERSION 34
+#include <fuse3/fuse.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -16,6 +18,12 @@ int main() {
 
     // create filesystem
     sys_makefs(inodes);
+
+    // create some files
+    struct fuse_file_info file_info;
+    sys_create("/hello.world", 0, &file_info);
+    sys_create("/foo.bar", 0, &file_info);
+    sys_create("/some file", 0, &file_info);
 
     return 0;
 }

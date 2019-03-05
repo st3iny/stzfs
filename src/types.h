@@ -8,15 +8,16 @@
 #define MAX_FILENAME_LENGTH 256 - sizeof(inodeptr_t) // 251 characters
 
 // file modes
-#define M_RU 0b100000000 // user read
-#define M_WU 0b010000000 // user write
-#define M_XU 0b001000000 // user execute
-#define M_RG 0b000100000 // group read
-#define M_WG 0b000010000 // group write
-#define M_XG 0b000001000 // group execute
-#define M_RO 0b000000100 // others read
-#define M_WO 0b000000010 // others write
-#define M_XO 0b000000001 // others execute
+#define M_RU  0b1000000000000 // user read
+#define M_WU  0b0100000000000 // user write
+#define M_XU  0b0010000000000 // user execute
+#define M_RG  0b0001000000000 // group read
+#define M_WG  0b0000100000000 // group write
+#define M_XG  0b0000010000000 // group execute
+#define M_RO  0b0000001000000 // others read
+#define M_WO  0b0000000100000 // others write
+#define M_XO  0b0000000010000 // others execute
+#define M_DIR 0b0000000001000 // directory
 
 typedef int      buffer_t;
 typedef int8_t   filename_t;

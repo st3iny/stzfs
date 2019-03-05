@@ -20,6 +20,11 @@ typedef struct super_block {
     int8_t padding[BLOCK_SIZE - sizeof(blockptr_t) * 8 - sizeof(inodeptr_t)];
 } __attribute__ ((packed)) super_block;
 
+#define INODE_DIRECT_BLOCKS (20)
+#define INODE_SINGLE_INDIRECT_BLOCKS (INDIRECT_BLOCK_ENTRIES)
+#define INODE_DOUBLE_INDIRECT_BLOCKS (INDIRECT_BLOCK_ENTRIES * INDIRECT_BLOCK_ENTRIES)
+#define INODE_TRIPLE_INDIRECT_BLOCKS (INODE_DOUBLE_INDIRECT_BLOCKS * INDIRECT_BLOCK_ENTRIES)
+
 // 128 bytes
 typedef struct inode {
     int16_t mode;
@@ -28,19 +33,20 @@ typedef struct inode {
     time_t crtime;
     time_t mtime;
     uint16_t link_count;
-    uint64_t byte_length;
-    uint32_t block_length;
+    uint64_t atom_count;
+    uint32_t block_count;
     // 36 bytes
-    blockptr_t data_direct[20];
+    blockptr_t data_direct[INODE_DIRECT_BLOCKS];
     blockptr_t data_single_indirect;
     blockptr_t data_double_indirect;
     blockptr_t data_triple_indirect;
-} __attribute__ ((packed)) inode;
+} __attribute__ ((packed)) inode_t;
 
-#define INODE_SIZE sizeof(inode)
+#define INODE_SIZE (sizeof(inode_t))
+#define INODE_BLOCK_ENTRIES (BLOCK_SIZE / sizeof(inode_t))
 
 typedef struct inode_block {
-    inode inodes[BLOCK_SIZE / sizeof(inode)];
+    inode_t inodes[INODE_BLOCK_ENTRIES];
 } __attribute__ ((packed)) inode_block;
 
 // 256 bytes
@@ -49,15 +55,16 @@ typedef struct dir_block_entry {
     inodeptr_t inode;
 } __attribute__ ((packed)) dir_block_entry;
 
-typedef struct dir_block {
-    uint8_t length;
-    dir_block_entry entries[BLOCK_SIZE / sizeof(dir_block_entry) - 1];
+#define DIR_BLOCK_ENTRIES (BLOCK_SIZE / sizeof(dir_block_entry))
 
-    int8_t padding[sizeof(dir_block_entry) - sizeof(uint8_t)];
+typedef struct dir_block {
+    dir_block_entry entries[DIR_BLOCK_ENTRIES];
 } __attribute__ ((packed)) dir_block;
 
+#define INDIRECT_BLOCK_ENTRIES (BLOCK_SIZE / sizeof(blockptr_t))
+
 typedef struct indirect_block {
-    blockptr_t blocks[BLOCK_SIZE / sizeof(blockptr_t)];
+    blockptr_t blocks[INDIRECT_BLOCK_ENTRIES];
 } __attribute__ ((packed)) indirect_block;
 
 typedef struct bitmap_block {

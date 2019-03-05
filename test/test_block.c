@@ -27,6 +27,6 @@ void test_block_sizes(void** state) {
 }
 
 void test_block_entry_sizes(void** state) {
-    assert_int_equal(sizeof(inode), 128);
+    assert_int_equal(sizeof(inode_t), 128);
     assert_int_equal(sizeof(dir_block_entry), 256);
 }
