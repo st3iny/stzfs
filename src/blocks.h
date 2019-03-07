@@ -9,6 +9,7 @@
 typedef struct super_block {
     blockptr_t block_count;
     blockptr_t free_blocks;
+    inodeptr_t free_inodes;
     blockptr_t block_bitmap;
     blockptr_t block_bitmap_length;
     blockptr_t inode_bitmap;
@@ -17,7 +18,7 @@ typedef struct super_block {
     blockptr_t inode_table_length;
     inodeptr_t inode_count;
 
-    int8_t padding[BLOCK_SIZE - sizeof(blockptr_t) * 8 - sizeof(inodeptr_t)];
+    int8_t padding[BLOCK_SIZE - sizeof(blockptr_t) * 8 - sizeof(inodeptr_t) * 2];
 } __attribute__ ((packed)) super_block;
 
 // blocks each direction/indirection level can hold

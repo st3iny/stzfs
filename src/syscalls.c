@@ -10,9 +10,16 @@
 #include "syscalls.h"
 #include "vm.h"
 
+// structs
+typedef struct file {
+    inodeptr_t inodeptr;
+    inode_t inode;
+} file;
+
 // find data in read blocks
 int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
                     inodeptr_t* parent_inodeptr, inode_t* parent_inode, char* last_name);
+int find_file_inode2(const char* file_path, file* f, file* parent, char* last_name);
 int find_name(const char* name, const inode_t* inode, inodeptr_t* found_inodeptr);
 blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset);
 int find_inode_data_blockptrs(const inode_t* inode, blockptr_t* blockptrs);
@@ -53,12 +60,6 @@ int read_or_alloc_block(blockptr_t* blockptr, void* block);
 void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
 int unlink_file_or_dir(const char* path, int allow_dir);
 
-// structs
-typedef struct file {
-    inodeptr_t inodeptr;
-    inode_t inode;
-} file;
-
 blockptr_t sys_makefs(inodeptr_t inode_count) {
     blockptr_t blocks = vm_size() / BLOCK_SIZE;
     printf("SYS: Creating file system with %i blocks and %i inodes.\n", blocks, inode_count);
@@ -75,6 +76,7 @@ blockptr_t sys_makefs(inodeptr_t inode_count) {
     memset(&sb, 0, BLOCK_SIZE);
     sb.block_count = blocks;
     sb.free_blocks = blocks - initial_block_count;
+    sb.free_inodes = inode_count - 2;
     sb.block_bitmap = 1;
     sb.block_bitmap_length = block_bitmap_length;
     sb.inode_bitmap = 1 + block_bitmap_length;
@@ -170,9 +172,6 @@ int sys_open(const char* file_path, struct fuse_file_info* file_info) {
         return 0;
     }
 }
-
-// close a file
-int sys_release(const char* file_path, struct fuse_file_info* file_info) {}
 
 // read from a file
 int sys_read(const char* file_path, char* buffer, size_t length, off_t offset,
@@ -422,6 +421,64 @@ int sys_unlink(const char* path) {
     return unlink_file_or_dir(path, 0);
 }
 
+// create a new directory
+int sys_mkdir(const char* path, mode_t mode) {
+    printf("FUSE: create directory %s\n", path);
+
+    char name[MAX_FILENAME_LENGTH];
+    file dir, parent;
+    int err = find_file_inode2(path, &dir, &parent, name);
+    if (err) return err;
+
+    if (dir.inodeptr != 0) {
+        printf("FUSE: file exists\n");
+        return -EEXIST;
+    }
+
+    super_block sb;
+    read_block(0, &sb);
+
+    if (sb.free_blocks == 0) {
+        printf("FUSE: no free block available\n");
+        return -ENOSPC;
+    } else if (sb.free_inodes == 0) {
+        printf("FUSE: no free inode available\n");
+        return -ENOSPC;
+    }
+
+    // allocate inode in bitmap
+    dir.inodeptr = alloc_bitmap("inode", sb.inode_bitmap, sb.inode_bitmap_length);
+
+    // allocate and write directory block
+    dir_block block;
+    memset(&block, 0, BLOCK_SIZE);
+    block.entries[0] = (dir_block_entry) {.name = ".", .inode=dir.inodeptr};
+    block.entries[1] = (dir_block_entry) {.name = "..", .inode=parent.inodeptr};
+    blockptr_t blockptr = alloc_block(&block);
+
+    // increase parent inode link counter
+    parent.inode.link_count++;
+    write_inode(parent.inodeptr, &parent.inode);
+
+    // create and write inode
+    time_t now;
+    time(&now);
+    dir.inode.mode = M_DIR;
+    dir.inode.link_count = 2;
+    dir.inode.atom_count = 2;
+    dir.inode.block_count = 1;
+    dir.inode.crtime = now;
+    dir.inode.mtime = now;
+    dir.inode.data_direct[0] = blockptr;
+    write_inode(dir.inodeptr, &dir.inode);
+
+    // allocate entry in parent dir
+    alloc_dir_entry(&parent.inode, name, dir.inodeptr);
+    write_inode(parent.inodeptr, &parent.inode);
+
+    return 0;
+}
+
 // remove an empty directory
 int sys_rmdir(const char* path) {
     printf("FUSE: remove directory %s\n", path);
@@ -483,6 +540,16 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
     }
 
     return 0;
+}
+
+// find file inode and store data in file struct
+int find_file_inode2(const char* file_path, file* f, file* parent, char* last_name) {
+    if (parent) {
+        return find_file_inode(file_path, &f->inodeptr, &f->inode, &parent->inodeptr,
+                               &parent->inode, last_name);
+    } else {
+        return find_file_inode(file_path, &f->inodeptr, &f->inode, NULL, NULL, last_name);
+    }
 }
 
 // find name in directory inode
