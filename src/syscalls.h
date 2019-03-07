@@ -17,7 +17,7 @@ int sys_write(const char* file_path, const char* buffer, size_t length, off_t of
               struct fuse_file_info* file_info);
 
 int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_info);
-int sys_rename(const filename_t* src, const filename_t* dst);
+int sys_rename(const char* src, const char* dst, unsigned int flags);
 int sys_unlink(const filename_t* path);
 
 #endif // FILESYSTEM_SYSCALLS_H

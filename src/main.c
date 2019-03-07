@@ -32,13 +32,27 @@ int main() {
     sys_create("/some_file", 0, &file_info);
 
     // write data to a file
-    char buffer[4 * BLOCK_SIZE];
-    int len;
+    char buffer[1024 * BLOCK_SIZE];
+    size_t len;
     long offset = 0;
     int fd = open("/tmp/bigfile", O_RDONLY);
-    while (len = read(fd, buffer, sizeof(buffer))) {
+    while ((len = read(fd, buffer, sizeof(buffer))) != 0) {
         // printf("offset = %lu, len = %i\n", offset, len);
         sys_write("/some_file", buffer, len, offset, &file_info);
+        offset += len;
+    }
+    close(fd);
+
+    // rename some files
+    sys_rename("/some_file", "/bigfile", 0);
+    sys_rename("/foo.bar", "/hello.world", 0);
+
+    // read data from file
+    offset = 0;
+    fd = open("/tmp/bigfile.comp", O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
+    while ((len = sys_read("/bigfile", buffer, sizeof(buffer), offset, &file_info)) != 0) {
+        // printf("offset = %lu, len = %i\n", offset, len);
+        write(fd, buffer, len);
         offset += len;
     }
     close(fd);
