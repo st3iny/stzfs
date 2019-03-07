@@ -56,6 +56,10 @@ int main() {
         offset += len;
     }
     close(fd);
+    sys_release("/bigfile", &file_info);
+
+    // unlink file
+    sys_unlink("/bigfile");
 
     return 0;
 }

@@ -34,6 +34,7 @@ int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr
 int free_bitmap(blockptr_t index, blockptr_t bitmap_offset, blockptr_t bitmap_length);
 int free_blocks(const blockptr_t* blockptrs, size_t length);
 int free_inode(inodeptr_t inodeptr, inode_t* inode);
+int free_inode_data_blocks(inode_t* inode, blockptr_t offset);
 int free_last_inode_data_block(inode_t* inode);
 int free_dir_entry(inode_t* inode, const char* name);
 
@@ -50,6 +51,13 @@ int file_exists(const char* path);
 uint32_t uint32_div_ceil(uint32_t a, uint32_t b);
 int read_or_alloc_block(blockptr_t* blockptr, void* block);
 void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
+int unlink_file_or_dir(const char* path, int allow_dir);
+
+// structs
+typedef struct file {
+    inodeptr_t inodeptr;
+    inode_t inode;
+} file;
 
 blockptr_t sys_makefs(inodeptr_t inode_count) {
     blockptr_t blocks = vm_size() / BLOCK_SIZE;
@@ -152,7 +160,7 @@ int sys_open(const char* file_path, struct fuse_file_info* file_info) {
     if (inodeptr == 0) {
         printf("FUSE: no such file\n");
         return -ENOENT;
-    } else if (inode.mode & M_DIR == 1) {
+    } else if (inode.mode & M_DIR) {
         printf("FUSE: can't open a directory\n");
         return -EISDIR;
     } else {
@@ -363,11 +371,6 @@ int sys_rename(const char* src_path, const char* dst_path, unsigned int flags) {
         return -EEXIST;
     }
 
-    typedef struct file {
-        inodeptr_t inodeptr;
-        inode_t inode;
-    } file;
-
     // find src file nodes
     char src_last_name[MAX_FILENAME_LENGTH];
     file src, src_parent;
@@ -412,6 +415,21 @@ int sys_rename(const char* src_path, const char* dst_path, unsigned int flags) {
     write_inode(src.inodeptr, &src.inode);
 }
 
+// unlink a file
+int sys_unlink(const char* path) {
+    printf("FUSE: unlink file %s\n", path);
+
+    return unlink_file_or_dir(path, 0);
+}
+
+// remove an empty directory
+int sys_rmdir(const char* path) {
+    printf("FUSE: remove directory %s\n", path);
+
+    // TODO: check root directory? fuse relative or absolute path?
+    return unlink_file_or_dir(path, 1);
+}
+
 // find the inode linked to given path
 int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
                     inodeptr_t* parent_inodeptr, inode_t* parent_inode, char* last_name) {
@@ -434,14 +452,14 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
             // there is a non existing directory in path
             printf("FUSE: no such file or directory\n");
             return -ENOENT;
-        } else if (inode->mode & M_DIR == 0) {
+        } else if ((inode->mode & M_DIR) == 0) {
             // a file is being treated like a directory
             printf("FUSE: expected directory, got file in path\n");
             return -ENOTDIR;
         } else {
             // traverse directory and find name in it
-            *parent_inodeptr = *inodeptr;
-            *parent_inode = *inode;
+            if (parent_inodeptr) *parent_inodeptr = *inodeptr;
+            if (parent_inode) *parent_inode = *inode;
             if (last_name) strcpy(last_name, name);
 
             inodeptr_t found_inodeptr;
@@ -703,7 +721,7 @@ blockptr_t write_inode_data_block(const inode_t* inode, blockptr_t offset, const
 
 // replace inodeptr of name in directory
 int write_dir_entry(const inode_t* inode, const char* name, inodeptr_t target_inodeptr) {
-    if (inode->mode & M_DIR == 0) {
+    if ((inode->mode & M_DIR) == 0) {
         printf("SYS: not a directory\n");
         return -ENOTDIR;
     }
@@ -872,7 +890,7 @@ int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr
     } else if (inode->link_count >= 0xffff) {
         printf("SYS: max link count reached\n");
         return -EMLINK;
-    } else if (inode->mode & M_DIR == 0) {
+    } else if ((inode->mode & M_DIR) == 0) {
         printf("SYS: not a directory\n");
         return -ENOTDIR;
     }
@@ -928,7 +946,7 @@ int free_inode(inodeptr_t inodeptr, inode_t* inode) {
     } else if (inode->link_count > 0) {
         printf("SYS: trying to delete an inode with links\n");
         return -EPERM;
-    } else if (inode->mode & M_DIR == 1 && inode->atom_count > 0) {
+    } else if ((inode->mode & M_DIR) && inode->atom_count > 2) {
         printf("SYS: directory is not empty\n");
         return -ENOTEMPTY;
     }
@@ -940,89 +958,90 @@ int free_inode(inodeptr_t inodeptr, inode_t* inode) {
     free_bitmap(inodeptr, sb.inode_bitmap, sb.inode_bitmap_length);
 
     // free allocated data blocks in bitmap
-    blockptr_t blockptrs[inode->block_count];
-    find_inode_data_blockptrs(inode, blockptrs);
-    free_blocks(blockptrs, inode->block_count);
+    free_inode_data_blocks(inode, 0);
+
+    return 0;
+}
+
+// truncate inode data blocks to given offset
+int free_inode_data_blocks(inode_t* inode, blockptr_t offset) {
+    // FIXME: implement proper algorithm (merge with free_last_inode_data_block)
+    for (blockptr_t block_count = inode->block_count; block_count > offset; block_count--) {
+        free_last_inode_data_block(inode);
+    }
 
     return 0;
 }
 
 // free the last data block of an inode
 int free_last_inode_data_block(inode_t* inode) {
-    if (inode->block_count == 0) {
+    if (inode->block_count <= 0) {
         return 0;
     }
 
-    // level struct for indirection convenience
     typedef struct level {
         blockptr_t blockptr;
         indirect_block block;
     } level;
 
-    level level1, level2, level3;
-    int free_level1 = 0;
-    int free_level2 = 0;
-    int free_level3 = 0;
-
     inode->block_count--;
     blockptr_t offset = inode->block_count;
-    if (offset >= INODE_TRIPLE_INDIRECT_OFFSET) {
-        offset -= INODE_TRIPLE_INDIRECT_OFFSET;
+    blockptr_t absolute_blockptr = 0;
+    if (offset < INODE_DIRECT_BLOCKS) {
+        absolute_blockptr = inode->data_direct[offset];
+
+        // FIXME: just for debugging
+        inode->data_direct[offset] = 0;
+    } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
+        level level1 = {.blockptr = inode->data_single_indirect};
+        read_block(level1.blockptr, &level1.block);
+        absolute_blockptr = level1.block.blocks[offset];
 
         if (offset == 0) {
-            level1.blockptr = inode->data_triple_indirect;
-            free_level1 = 1;
-
-            // FIXME: just for debugging
-            inode->data_triple_indirect = 0;
-        }
-        if (offset % INODE_DOUBLE_INDIRECT_BLOCKS == 0) {
-            read_block(level1.blockptr, &level1.block);
-            level2.blockptr = level1.block.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS];
-            free_level2 = 1;
-        }
-        if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) {
-            read_block(level2.blockptr, &level2.block);
-            level3.blockptr = level2.block.blocks[offset % INODE_DOUBLE_INDIRECT_BLOCKS];
-            free_level3 = 1;
-        }
-    } else if (offset >= INODE_DOUBLE_INDIRECT_OFFSET) {
-        offset -= INODE_DOUBLE_INDIRECT_OFFSET;
-
-        if (offset == 0) {
-            level1.blockptr = inode->data_double_indirect;
-            free_level1 = 1;
-
-            // FIXME: just for debugging
-            inode->data_double_indirect = 0;
-        }
-        if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) {
-            read_block(level1.blockptr, &level1.block);
-            level2.blockptr = level1.block.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS];
-            free_level2 = 1;
-        }
-    } else if (offset >= INODE_SINGLE_INDIRECT_OFFSET) {
-        offset -= INODE_SINGLE_INDIRECT_OFFSET;
-
-        if (offset == 0) {
-            level1.blockptr == inode->data_single_indirect;
-            free_level1 = 1;
+            free_blocks(&level1.blockptr, 1);
 
             // FIXME: just for debugging
             inode->data_single_indirect = 0;
         }
-    } else {
-        free_blocks(&inode->data_direct[offset], 1);
+    } else if ((offset -= INODE_SINGLE_INDIRECT_BLOCKS) < INODE_DOUBLE_INDIRECT_BLOCKS) {
+        level level1 = {.blockptr = inode->data_double_indirect};
+        read_block(level1.blockptr, &level1.block);
 
-        // FIXME: just for debugging
-        inode->data_direct[offset] = 0;
+        level level2 = {.blockptr = level1.block.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS]};
+        read_block(level2.blockptr, &level2.block);
+        absolute_blockptr = level2.block.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS];
+
+        if (offset == 0) {
+            free_blocks(&level1.blockptr, 1);
+
+            // FIXME: just for debugging
+            inode->data_double_indirect = 0;
+        }
+        if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) free_blocks(&level2.blockptr, 1);
+    } else if ((offset -= INODE_DOUBLE_INDIRECT_BLOCKS) < INODE_TRIPLE_INDIRECT_BLOCKS) {
+        level level1 = {.blockptr = inode->data_triple_indirect};
+        read_block(level1.blockptr, &level1.block);
+
+        level level2 = {.blockptr = level1.block.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS]};
+        read_block(level2.blockptr, &level2.block);
+
+        level level3 = {.blockptr = level2.block.blocks[offset % INODE_DOUBLE_INDIRECT_BLOCKS]};
+        read_block(level3.blockptr, &level3.block);
+        absolute_blockptr = level3.block.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS];
+
+        if (offset == 0) {
+            free_blocks(&level1.blockptr, 1);
+
+            // FIXME: just for debugging
+            inode->data_triple_indirect = 0;
+        }
+        if (offset % INODE_DOUBLE_INDIRECT_BLOCKS == 0) free_blocks(&level2.blockptr, 1);
+        if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) free_blocks(&level3.blockptr, 1);
+    } else {
+        printf("SYS: relative data offset out of bounds\n");
     }
 
-    // free designated blocks
-    if (free_level1) free_blocks(&level1.blockptr, 1);
-    if (free_level2) free_blocks(&level2.blockptr, 1);
-    if (free_level3) free_blocks(&level3.blockptr, 1);
-
+    if (absolute_blockptr) free_blocks(&absolute_blockptr, 1);
     return 0;
 }
 
@@ -1035,7 +1054,7 @@ int free_bitmap(blockptr_t index, blockptr_t bitmap_offset, blockptr_t bitmap_le
     }
 
     size_t inner_offset = index % 64;
-    size_t entry = (index % (BLOCK_SIZE * 8)) / 8;
+    size_t entry = (index % (BLOCK_SIZE * 8)) / 64;
 
     blockptr_t blockptr = bitmap_offset + offset;
     bitmap_block ba;
@@ -1048,7 +1067,7 @@ int free_bitmap(blockptr_t index, blockptr_t bitmap_offset, blockptr_t bitmap_le
 
 // free entry from directory
 int free_dir_entry(inode_t* inode, const char* name) {
-    if (inode->mode & M_DIR == 0) {
+    if ((inode->mode & M_DIR) == 0) {
         printf("SYS: not a directory\n");
         return -ENOTDIR;
     }
@@ -1132,4 +1151,27 @@ int read_or_alloc_block(blockptr_t* blockptr, void* block) {
 void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b) {
     size_t min = a < b ? a : b;
     memcpy(dest, src, mult * min);
+}
+
+// unlink file (or directory if allow_dir is not 0)
+int unlink_file_or_dir(const char* path, int allow_dir) {
+    file f, parent;
+    char name[MAX_FILENAME_LENGTH];
+    int err = find_file_inode(path, &f.inodeptr, &f.inode, &parent.inodeptr, &parent.inode, name);
+    if (err) return err;
+
+    if (f.inodeptr == 0) {
+        printf("FUSE: no such file or directory\n");
+        return -ENOENT;
+    } else if ((f.inode.mode & M_DIR) && !allow_dir) {
+        printf("FUSE: is a directory\n");
+        return -EISDIR;
+    }
+
+    f.inode.link_count--;
+    free_dir_entry(&parent.inode, name);
+    write_inode(parent.inodeptr, &parent.inode);
+    free_inode(f.inodeptr, &f.inode);
+
+    return 0;
 }
