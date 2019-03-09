@@ -9,6 +9,11 @@
 #include "types.h"
 #include "vm.h"
 
+int printf_filler(void* buffer, const char *name, const struct stat* stbuf, off_t offset,
+                  enum fuse_fill_dir_flags flags) {
+    printf("%s\n", name);
+}
+
 int main() {
     // definitions
     const blockptr_t blocks = 4 * 256 * 1024;
@@ -41,6 +46,9 @@ int main() {
     }
     close(fd);
 
+    // list root contents
+    sys_readdir("/", NULL, printf_filler, 0, NULL, 0);
+
     // rename some files
     sys_rename("/some_file", "/bigfile", 0);
     sys_rename("/foo.bar", "/hello.world", 0);
@@ -66,6 +74,20 @@ int main() {
     sys_create("/home/user/lore_ipsum.txt", 0, &file_info);
     char lorem[] = "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.";
     sys_write("/home/user/lore_ipsum.txt", lorem, sizeof(lorem), 0, &file_info);
+
+    // ls the user directory
+    sys_readdir("/home/user", NULL, printf_filler, 0, NULL, 0);
+
+    // create another empty dir and unlink it
+    sys_mkdir("/home/user/foo", 0);
+    sys_unlink("/home/user/foo"); // should fail
+    sys_create("/home/user/foo/bar", 0, &file_info);
+    sys_readdir("/home/user", NULL, printf_filler, 0, NULL, 0);
+    sys_readdir("/home/user/foo", NULL, printf_filler, 0, NULL, 0);
+    sys_rmdir("/home/user/foo"); // should fail too
+    sys_unlink("/home/user/foo/bar");
+    sys_rmdir("/home/user/foo");
+    sys_readdir("/home/user", NULL, printf_filler, 0, NULL, 0);
 
     return 0;
 }

@@ -10,6 +10,21 @@
 #include "syscalls.h"
 #include "vm.h"
 
+// fuse operations
+struct fuse_operations sys_ops = {
+    .init = sys_init,
+    .create = sys_create,
+    .rename = sys_rename,
+    .unlink = sys_unlink,
+    .getattr = sys_getattr,
+    .open = sys_open,
+    .read = sys_read,
+    .write = sys_write,
+    .mkdir = sys_mkdir,
+    .rmdir = sys_rmdir,
+    .readdir = sys_readdir
+};
+
 // structs
 typedef struct file {
     inodeptr_t inodeptr;
@@ -60,6 +75,7 @@ int read_or_alloc_block(blockptr_t* blockptr, void* block);
 void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
 int unlink_file_or_dir(const char* path, int allow_dir);
 
+// init filesystem
 blockptr_t sys_makefs(inodeptr_t inode_count) {
     blockptr_t blocks = vm_size() / BLOCK_SIZE;
     printf("SYS: Creating file system with %i blocks and %i inodes.\n", blocks, inode_count);
@@ -148,6 +164,42 @@ blockptr_t sys_makefs(inodeptr_t inode_count) {
     printf("SYS: Wrote root inode with id %i.\n", root_inode_ptr);
 
     return blocks;
+}
+
+// init fuse
+void* sys_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
+    cfg->kernel_cache = 1;
+    cfg->use_ino = 1;
+    return NULL;
+}
+
+// get file stats
+int sys_getattr(const char* path, struct stat* st, struct fuse_file_info* file_info) {
+    printf("sys_getattr: get attributes of %s\n", path);
+
+    // TODO: reuse inode
+    if (!file_exists(path)) {
+        printf("stat: no such file\n");
+        return -ENOENT;
+    }
+
+    file f;
+    int err = find_file_inode2(path, &f, NULL, NULL);
+    if (err) return err;
+
+    if ((f.inode.mode & M_DIR)) {
+        st->st_ino = f.inodeptr;
+        st->st_mode = S_IFDIR | 0755;
+        st->st_size = f.inode.atom_count * sizeof(dir_block_entry);
+        st->st_nlink = f.inode.link_count;
+    } else {
+        st->st_ino = f.inodeptr;
+        st->st_mode = S_IFREG | 0444;
+        st->st_size = f.inode.atom_count;
+        st->st_nlink = f.inode.link_count;
+    }
+
+    return 0;
 }
 
 // open existing file
@@ -325,7 +377,7 @@ int sys_write(const char* file_path, const char* buffer, size_t length, off_t of
 
 // create new file and open it
 int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_info) {
-    printf("FUSE: create %s\n", file_path);
+    printf("FUSE: create file %s\n", file_path);
 
     inodeptr_t inodeptr, parent_inodeptr;
     inode_t inode, parent_inode;
@@ -338,7 +390,6 @@ int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_i
         return -EEXIST;
     } else {
         // create new file
-        printf("FUSE: create file\n");
         time_t now;
         time(&now);
         // TODO: implement mode
@@ -346,9 +397,11 @@ int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_i
         inode.crtime = now;
         inode.mtime = now;
         inode.link_count = 1;
+
         inodeptr = alloc_inode(&inode);
         alloc_dir_entry(&parent_inode, last_name, inodeptr);
         write_inode(parent_inodeptr, &parent_inode);
+
         file_info->fh = inodeptr;
         return 0;
     }
@@ -487,6 +540,39 @@ int sys_rmdir(const char* path) {
     return unlink_file_or_dir(path, 1);
 }
 
+// read the contents of a directory
+int sys_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t offset,
+                struct fuse_file_info* file_info, enum fuse_readdir_flags flags) {
+    printf("FUSE: read directory %s\n", path);
+
+    if (!file_exists(path)) {
+        printf("FUSE: no such directory\n");
+        return -ENOENT;
+    }
+
+    file dir;
+    find_file_inode2(path, &dir, NULL, NULL);
+
+    if ((dir.inode.mode & M_DIR) == 0) {
+        printf("FUSE: not a directory\n");
+        return -ENOTDIR;
+    }
+
+    dir_block dir_blocks[dir.inode.block_count];
+    read_inode_data_blocks(&dir.inode, dir_blocks);
+
+    for (blockptr_t offset = 0; offset < dir.inode.block_count; offset++) {
+        for (size_t entry = 0; entry < DIR_BLOCK_ENTRIES; entry++) {
+            if (entry + offset * DIR_BLOCK_ENTRIES >= dir.inode.atom_count) return 0;
+
+            dir_block_entry* entry_data = &dir_blocks[offset].entries[entry];
+            filler(buffer, entry_data->name, NULL, 0, 0);
+        }
+    }
+
+    return 0;
+}
+
 // find the inode linked to given path
 int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
                     inodeptr_t* parent_inodeptr, inode_t* parent_inode, char* last_name) {
@@ -497,13 +583,20 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
     *inodeptr = 1;
     read_inode(*inodeptr, inode);
 
+    if (strcmp(file_path, "/") == 0 ) {
+        if (parent_inodeptr) *parent_inodeptr = 0;
+        if (parent_inode) memset(parent_inode, 0, sizeof(inode_t));
+        if (last_name) last_name = strdup("/");
+        return 0;
+    }
+
     int not_existing = 0;
     // char* full_name = (char*)malloc(2048 * sizeof(char));
     char full_name[2048];
     strcpy(full_name, file_path);
     char* name = strtok(full_name, "/");
     do {
-        printf("Searching for %s\n", name);
+        // printf("Searching for %s\n", name);
 
         if (not_existing) {
             // there is a non existing directory in path
@@ -1008,14 +1101,17 @@ int free_blocks(const blockptr_t* blockptrs, size_t length) {
 // free inode and allocated data blocks
 int free_inode(inodeptr_t inodeptr, inode_t* inode) {
     if (inodeptr <= 1) {
-        printf("SYS: trying to free protected inode\n");
+        printf("free_inode: trying to free protected inode\n");
         return -EFAULT;
-    } else if (inode->link_count > 0) {
-        printf("SYS: trying to delete an inode with links\n");
-        return -EPERM;
     } else if ((inode->mode & M_DIR) && inode->atom_count > 2) {
-        printf("SYS: directory is not empty\n");
+        printf("free_inode: directory is not empty\n");
         return -ENOTEMPTY;
+    } else if ((inode->mode & M_DIR) && inode->link_count > 1) {
+        printf("free_inode: directory inode link count too high\n");
+        return -EPERM;
+    } else if ((inode->mode & M_DIR) == 0 && inode->link_count > 0) {
+        printf("free_inode: file inode link count too high\n");
+        return -EPERM;
     }
 
     super_block sb;
@@ -1224,15 +1320,18 @@ void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b) {
 int unlink_file_or_dir(const char* path, int allow_dir) {
     file f, parent;
     char name[MAX_FILENAME_LENGTH];
-    int err = find_file_inode(path, &f.inodeptr, &f.inode, &parent.inodeptr, &parent.inode, name);
+    int err = find_file_inode2(path, &f, &parent, name);
     if (err) return err;
 
     if (f.inodeptr == 0) {
-        printf("FUSE: no such file or directory\n");
+        printf("unlink: no such file or directory\n");
         return -ENOENT;
     } else if ((f.inode.mode & M_DIR) && !allow_dir) {
-        printf("FUSE: is a directory\n");
+        printf("unlink: is a directory\n");
         return -EISDIR;
+    } else if ((f.inode.mode & M_DIR) && f.inode.atom_count > 2) {
+        printf("unlink: directory is not empty\n");
+        return -ENOTEMPTY;
     }
 
     f.inode.link_count--;
