@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
     printf("mounting %s\n", device);
     vm_config_set_file(device);
     struct fuse_args args = FUSE_ARGS_INIT(index, argv_new);
-    int ret = fuse_main(args.argc, args.argv, &sys_ops, NULL);
+    int ret = fuse_main(args.argc, args.argv, &stzfs_ops, NULL);
 
     // cleanup fuse
     fuse_opt_free_args(&args);

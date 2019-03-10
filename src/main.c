@@ -24,15 +24,15 @@ int main() {
     off_t size = vm_config_set_file(VM_HDD_PATH);
 
     // create filesystem
-    sys_makefs(inodes);
+    stzfs_makefs(inodes);
 
     // create some files
     struct fuse_file_info file_info;
-    sys_create("/hello.world", 0, &file_info);
+    stzfs_create("/hello.world", 0, &file_info);
 
-    sys_create("/foo.bar", 0, &file_info);
+    stzfs_create("/foo.bar", 0, &file_info);
 
-    sys_create("/some_file", 0, &file_info);
+    stzfs_create("/some_file", 0, &file_info);
 
     // write data to a file
     char buffer[1024 * BLOCK_SIZE];
@@ -41,22 +41,22 @@ int main() {
     int fd = open("/tmp/bigfile", O_RDONLY);
     while ((len = read(fd, buffer, sizeof(buffer))) != 0) {
         // printf("offset = %lu, len = %i\n", offset, len);
-        sys_write("/some_file", buffer, len, offset, &file_info);
+        stzfs_write("/some_file", buffer, len, offset, &file_info);
         offset += len;
     }
     close(fd);
 
     // list root contents
-    sys_readdir("/", NULL, printf_filler, 0, NULL, 0);
+    stzfs_readdir("/", NULL, printf_filler, 0, NULL, 0);
 
     // rename some files
-    sys_rename("/some_file", "/bigfile", 0);
-    sys_rename("/foo.bar", "/hello.world", 0);
+    stzfs_rename("/some_file", "/bigfile", 0);
+    stzfs_rename("/foo.bar", "/hello.world", 0);
 
     // read data from file
     offset = 0;
     fd = open("/tmp/bigfile.comp", O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
-    while ((len = sys_read("/bigfile", buffer, sizeof(buffer), offset, &file_info)) != 0) {
+    while ((len = stzfs_read("/bigfile", buffer, sizeof(buffer), offset, &file_info)) != 0) {
         // printf("offset = %lu, len = %i\n", offset, len);
         write(fd, buffer, len);
         offset += len;
@@ -64,30 +64,30 @@ int main() {
     close(fd);
 
     // unlink file
-    sys_unlink("/bigfile");
+    stzfs_unlink("/bigfile");
 
     // create directories
-    sys_mkdir("/home", 0);
-    sys_mkdir("/home/user", 0);
+    stzfs_mkdir("/home", 0);
+    stzfs_mkdir("/home/user", 0);
 
     // create a file in new directory and write some data to it
-    sys_create("/home/user/lore_ipsum.txt", 0, &file_info);
+    stzfs_create("/home/user/lore_ipsum.txt", 0, &file_info);
     char lorem[] = "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.";
-    sys_write("/home/user/lore_ipsum.txt", lorem, sizeof(lorem), 0, &file_info);
+    stzfs_write("/home/user/lore_ipsum.txt", lorem, sizeof(lorem), 0, &file_info);
 
     // ls the user directory
-    sys_readdir("/home/user", NULL, printf_filler, 0, NULL, 0);
+    stzfs_readdir("/home/user", NULL, printf_filler, 0, NULL, 0);
 
     // create another empty dir and unlink it
-    sys_mkdir("/home/user/foo", 0);
-    sys_unlink("/home/user/foo"); // should fail
-    sys_create("/home/user/foo/bar", 0, &file_info);
-    sys_readdir("/home/user", NULL, printf_filler, 0, NULL, 0);
-    sys_readdir("/home/user/foo", NULL, printf_filler, 0, NULL, 0);
-    sys_rmdir("/home/user/foo"); // should fail too
-    sys_unlink("/home/user/foo/bar");
-    sys_rmdir("/home/user/foo");
-    sys_readdir("/home/user", NULL, printf_filler, 0, NULL, 0);
+    stzfs_mkdir("/home/user/foo", 0);
+    stzfs_unlink("/home/user/foo"); // should fail
+    stzfs_create("/home/user/foo/bar", 0, &file_info);
+    stzfs_readdir("/home/user", NULL, printf_filler, 0, NULL, 0);
+    stzfs_readdir("/home/user/foo", NULL, printf_filler, 0, NULL, 0);
+    stzfs_rmdir("/home/user/foo"); // should fail too
+    stzfs_unlink("/home/user/foo/bar");
+    stzfs_rmdir("/home/user/foo");
+    stzfs_readdir("/home/user", NULL, printf_filler, 0, NULL, 0);
 
     return 0;
 }

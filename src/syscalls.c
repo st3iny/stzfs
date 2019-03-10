@@ -11,18 +11,18 @@
 #include "vm.h"
 
 // fuse operations
-struct fuse_operations sys_ops = {
-    .init = sys_init,
-    .create = sys_create,
-    .rename = sys_rename,
-    .unlink = sys_unlink,
-    .getattr = sys_getattr,
-    .open = sys_open,
-    .read = sys_read,
-    .write = sys_write,
-    .mkdir = sys_mkdir,
-    .rmdir = sys_rmdir,
-    .readdir = sys_readdir
+struct fuse_operations stzfs_ops = {
+    .init = stzfs_init,
+    .create = stzfs_create,
+    .rename = stzfs_rename,
+    .unlink = stzfs_unlink,
+    .getattr = stzfs_getattr,
+    .open = stzfs_open,
+    .read = stzfs_read,
+    .write = stzfs_write,
+    .mkdir = stzfs_mkdir,
+    .rmdir = stzfs_rmdir,
+    .readdir = stzfs_readdir
 };
 
 // structs
@@ -76,7 +76,7 @@ void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
 int unlink_file_or_dir(const char* path, int allow_dir);
 
 // init filesystem
-blockptr_t sys_makefs(inodeptr_t inode_count) {
+blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     blockptr_t blocks = vm_size() / BLOCK_SIZE;
     printf("SYS: Creating file system with %i blocks and %i inodes.\n", blocks, inode_count);
 
@@ -167,15 +167,15 @@ blockptr_t sys_makefs(inodeptr_t inode_count) {
 }
 
 // init fuse
-void* sys_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
+void* stzfs_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
     cfg->kernel_cache = 1;
     cfg->use_ino = 1;
     return NULL;
 }
 
 // get file stats
-int sys_getattr(const char* path, struct stat* st, struct fuse_file_info* file_info) {
-    printf("sys_getattr: get attributes of %s\n", path);
+int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file_info) {
+    printf("stzfs_getattr: get attributes of %s\n", path);
 
     // TODO: reuse inode
     if (!file_exists(path)) {
@@ -203,35 +203,30 @@ int sys_getattr(const char* path, struct stat* st, struct fuse_file_info* file_i
 }
 
 // open existing file
-int sys_open(const char* file_path, struct fuse_file_info* file_info) {
-    printf("FUSE: open %s\n", file_path);
-
+int stzfs_open(const char* file_path, struct fuse_file_info* file_info) {
     inodeptr_t inodeptr, parent_inodeptr;
     inode_t inode, parent_inode;
     int err = find_file_inode(file_path, &inodeptr, &inode, &parent_inodeptr, &parent_inode, NULL);
     if (err) return err;
 
     if (inodeptr == 0) {
-        printf("FUSE: no such file\n");
+        printf("stzfs_open: no such file\n");
         return -ENOENT;
     } else if (inode.mode & M_DIR) {
-        printf("FUSE: can't open a directory\n");
+        printf("stzfs_open: is a directory\n");
         return -EISDIR;
     } else {
         // open exsiting file
-        printf("FUSE: opened file\n");
         file_info->fh = inodeptr;
         return 0;
     }
 }
 
 // read from a file
-int sys_read(const char* file_path, char* buffer, size_t length, off_t offset,
-             struct fuse_file_info* file_info) {
-    // printf("FUSE: read from file %s\n", file_path);
-
+int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
+               struct fuse_file_info* file_info) {
     if (file_info->fh == 0) {
-        printf("FUSE: invald file handle (inode)\n");
+        printf("stzfs_read: invald file handle (inode)\n");
         return -EFAULT;
     }
 
@@ -241,7 +236,7 @@ int sys_read(const char* file_path, char* buffer, size_t length, off_t offset,
 
     // check file bounds
     if (inode.mode & M_DIR) {
-        printf("FUSE: is a directory\n");
+        printf("stzfs_read: is a directory\n");
         return -EISDIR;
     }
 
@@ -289,12 +284,10 @@ int sys_read(const char* file_path, char* buffer, size_t length, off_t offset,
 }
 
 // write to a file
-int sys_write(const char* file_path, const char* buffer, size_t length, off_t offset,
-              struct fuse_file_info* file_info) {
-    // printf("FUSE: write to file %s\n", file_path);
-
+int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t offset,
+                struct fuse_file_info* file_info) {
     if (file_info->fh == 0) {
-        printf("FUSE: invald file handle (inode)\n");
+        printf("stzfs_write: invald file handle (inode)\n");
         return -EFAULT;
     }
 
@@ -305,13 +298,13 @@ int sys_write(const char* file_path, const char* buffer, size_t length, off_t of
     // check file size limits
     size_t max_block_offset = uint32_div_ceil(offset + length, BLOCK_SIZE);
     if (max_block_offset >= INODE_MAX_BLOCKS) {
-        printf("FUSE: max file size exceeded\n");
+        printf("stzfs_write: max file size exceeded\n");
         return -EFBIG;
     }
 
     // check continuity
     if (offset > inode.atom_count) {
-        printf("FUSE: offset too high\n");
+        printf("stzfs_write: offset too high\n");
         return -ESPIPE;
     }
 
@@ -376,9 +369,7 @@ int sys_write(const char* file_path, const char* buffer, size_t length, off_t of
 }
 
 // create new file and open it
-int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_info) {
-    printf("FUSE: create file %s\n", file_path);
-
+int stzfs_create(const char* file_path, mode_t mode, struct fuse_file_info* file_info) {
     inodeptr_t inodeptr, parent_inodeptr;
     inode_t inode, parent_inode;
     char last_name[2048];
@@ -386,7 +377,7 @@ int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_i
     if (err) return err;
 
     if (inodeptr != 0) {
-        printf("FUSE: file is already existing\n");
+        printf("stzfs_create: file is already existing\n");
         return -EEXIST;
     } else {
         // create new file
@@ -408,18 +399,16 @@ int sys_create(const char* file_path, mode_t mode, struct fuse_file_info* file_i
 }
 
 // rename a file
-int sys_rename(const char* src_path, const char* dst_path, unsigned int flags) {
-    printf("FUSE: rename %s -> %s\n", src_path, dst_path);
-
+int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags) {
     // TODO: improve me (use inodes and ptrs)
     int src_exists = file_exists(src_path);
     int dst_exists = file_exists(dst_path);
 
     if (src_exists == 0) {
-        printf("FUSE: src file does not exist\n");
+        printf("stzfs_rename: src file does not exist\n");
         return -ENOENT;
     } else if (dst_exists && (flags & RENAME_NOREPLACE)) {
-        printf("FUSE: dst file exists but RENAME_NOREPLACE is set\n");
+        printf("stzfs_rename: dest file exists but RENAME_NOREPLACE is set\n");
         return -EEXIST;
     }
 
@@ -468,23 +457,19 @@ int sys_rename(const char* src_path, const char* dst_path, unsigned int flags) {
 }
 
 // unlink a file
-int sys_unlink(const char* path) {
-    printf("FUSE: unlink file %s\n", path);
-
+int stzfs_unlink(const char* path) {
     return unlink_file_or_dir(path, 0);
 }
 
 // create a new directory
-int sys_mkdir(const char* path, mode_t mode) {
-    printf("FUSE: create directory %s\n", path);
-
+int stzfs_mkdir(const char* path, mode_t mode) {
     char name[MAX_FILENAME_LENGTH];
     file dir, parent;
     int err = find_file_inode2(path, &dir, &parent, name);
     if (err) return err;
 
     if (dir.inodeptr != 0) {
-        printf("FUSE: file exists\n");
+        printf("stzfs_mkdir: file exists\n");
         return -EEXIST;
     }
 
@@ -492,10 +477,10 @@ int sys_mkdir(const char* path, mode_t mode) {
     read_block(0, &sb);
 
     if (sb.free_blocks == 0) {
-        printf("FUSE: no free block available\n");
+        printf("stzfs_mkdir: no free block available\n");
         return -ENOSPC;
     } else if (sb.free_inodes == 0) {
-        printf("FUSE: no free inode available\n");
+        printf("stzfs_mkdir: no free inode available\n");
         return -ENOSPC;
     }
 
@@ -533,20 +518,16 @@ int sys_mkdir(const char* path, mode_t mode) {
 }
 
 // remove an empty directory
-int sys_rmdir(const char* path) {
-    printf("FUSE: remove directory %s\n", path);
-
+int stzfs_rmdir(const char* path) {
     // TODO: check root directory? fuse relative or absolute path?
     return unlink_file_or_dir(path, 1);
 }
 
 // read the contents of a directory
-int sys_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t offset,
-                struct fuse_file_info* file_info, enum fuse_readdir_flags flags) {
-    printf("FUSE: read directory %s\n", path);
-
+int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t offset,
+                  struct fuse_file_info* file_info, enum fuse_readdir_flags flags) {
     if (!file_exists(path)) {
-        printf("FUSE: no such directory\n");
+        printf("stzfs_readdir: no such directory\n");
         return -ENOENT;
     }
 
@@ -554,7 +535,7 @@ int sys_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t of
     find_file_inode2(path, &dir, NULL, NULL);
 
     if ((dir.inode.mode & M_DIR) == 0) {
-        printf("FUSE: not a directory\n");
+        printf("stzfs_readdir: not a directory\n");
         return -ENOTDIR;
     }
 
@@ -600,11 +581,11 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
 
         if (not_existing) {
             // there is a non existing directory in path
-            printf("FUSE: no such file or directory\n");
+            printf("find_file_inode: no such file or directory\n");
             return -ENOENT;
         } else if ((inode->mode & M_DIR) == 0) {
             // a file is being treated like a directory
-            printf("FUSE: expected directory, got file in path\n");
+            printf("find_file_inode: expected directory, got file in path\n");
             return -ENOTDIR;
         } else {
             // traverse directory and find name in it
@@ -648,7 +629,7 @@ int find_file_inode2(const char* file_path, file* f, file* parent, char* last_na
 // find name in directory inode
 int find_name(const char* name, const inode_t* inode, inodeptr_t* found_inodeptr) {
     if (inode->mode & M_DIR == 0) {
-        printf("SYS: inode is not a directory\n");
+        printf("find_name: inode is not a directory\n");
         return -ENOTDIR;
     }
 
@@ -676,7 +657,10 @@ int find_name(const char* name, const inode_t* inode, inodeptr_t* found_inodeptr
 // translate relative inode data block offset to absolute blockptr
 blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset) {
     if (offset >= inode->block_count) {
-        printf("SYS: relative inode data block offset out of bounds\n");
+        printf("find_inode_data_blockptr: relative data block offset out of bounds\n");
+        return 0;
+    } else if (offset >= INODE_MAX_BLOCKS) {
+        printf("find_inode_data_blockptr: inode has too many data blocks\n");
         return 0;
     }
 
@@ -707,9 +691,6 @@ blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset) {
         indirect_block level3;
         read_block(level3_blockptr, &level3);
         absolute_blockptr = level3.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS];
-    } else {
-        printf("SYS: relative data blockptr out of bounds\n");
-        absolute_blockptr = 0;
     }
 
     return absolute_blockptr;
@@ -788,7 +769,7 @@ void read_inode(inodeptr_t inodeptr, inode_t* inode) {
 
     blockptr_t inode_table_block_offset = inodeptr / (BLOCK_SIZE / sizeof(inode_t));
     if (inode_table_block_offset >= sb.inode_table_length) {
-        printf("SYS: Out of bounds while trying to read inode.\n");
+        printf("read_inode: out of bounds while trying to read inode\n");
         return;
     }
 
@@ -805,7 +786,7 @@ void read_inode(inodeptr_t inodeptr, inode_t* inode) {
 blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* block) {
     blockptr_t blockptr = find_inode_data_blockptr(inode, offset);
     if (blockptr == 0) {
-        printf("SYS: could not read inode data block\n");
+        printf("read_inode_data_block: could not read inode data block\n");
         return 0;
     }
 
@@ -834,7 +815,7 @@ void read_inode_data_blocks(const inode_t* inode, void* data_block_array) {
 
     // TODO: read double and triple indirect blocks
     if (data_offset < inode->block_count) {
-        printf("SYS: Did not read all inode data blocks.\n");
+        printf("read_inode_data_blocks: did not read all inode data blocks\n");
     }
 }
 
@@ -846,7 +827,7 @@ void write_block(blockptr_t blockptr, const void* block) {
 // write inode to disk
 void write_inode(inodeptr_t inodeptr, const inode_t* inode) {
     if (inodeptr == 0) {
-        printf("SYS: can't write inode 0\n");
+        printf("write_inode: can't write protected inode 0\n");
         return;
     }
 
@@ -855,7 +836,7 @@ void write_inode(inodeptr_t inodeptr, const inode_t* inode) {
 
     blockptr_t table_block_offset = inodeptr / INODE_BLOCK_ENTRIES;
     if (table_block_offset > sb.inode_table_length) {
-        printf("SYS: inode index out of bounds\n");
+        printf("write_inode: inode index out of bounds\n");
         return;
     }
 
@@ -871,7 +852,7 @@ void write_inode(inodeptr_t inodeptr, const inode_t* inode) {
 blockptr_t write_inode_data_block(const inode_t* inode, blockptr_t offset, const void* block) {
     blockptr_t blockptr = find_inode_data_blockptr(inode, offset);
     if (blockptr == 0) {
-        printf("SYS: could not write inode data block\n");
+        printf("write_inode_data_block: could not write inode data block\n");
         return 0;
     }
 
@@ -882,7 +863,7 @@ blockptr_t write_inode_data_block(const inode_t* inode, blockptr_t offset, const
 // replace inodeptr of name in directory
 int write_dir_entry(const inode_t* inode, const char* name, inodeptr_t target_inodeptr) {
     if ((inode->mode & M_DIR) == 0) {
-        printf("SYS: not a directory\n");
+        printf("write_dir_entry: not a directory\n");
         return -ENOTDIR;
     }
 
@@ -901,7 +882,7 @@ int write_dir_entry(const inode_t* inode, const char* name, inodeptr_t target_in
         }
     }
 
-    printf("SYS: name does not exist in directory\n");
+    printf("write_dir_entry: name does not exist in directory\n");
     return -ENOENT;
 }
 
@@ -937,7 +918,7 @@ blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t 
     }
 
     if (next_free == 0) {
-        printf("SYS: Could not allocate a free %s.\n", title);
+        printf("alloc_bitmap: could not allocate a free %s\n", title);
         return 0;
     }
 
@@ -982,7 +963,7 @@ inodeptr_t alloc_inode(const inode_t* new_inode) {
 // alloc a new data block for an inode
 blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
     if (inode->block_count >= INODE_MAX_BLOCKS) {
-        printf("SYS: inode has reached max block count \n");
+        printf("alloc_inode_data_block: inode has reached max block count\n");
         return 0;
     }
 
@@ -1033,8 +1014,6 @@ blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
         if (level1.changed) write_block(*level1.blockptr, &level1.block);
         if (level2.changed) write_block(*level2.blockptr, &level2.block);
         write_block(*level3.blockptr, &level3.block);
-    } else {
-        printf("SYS: relative data blockptr out of bounds\n");
     }
 
     // one block is allocated in each case
@@ -1045,13 +1024,13 @@ blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
 // alloc an entry in a directory inode
 int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr) {
     if (strlen(name) > MAX_FILENAME_LENGTH) {
-        printf("SYS: Filename too long.\n");
+        printf("alloc_dir_entry: filename too long\n");
         return -ENAMETOOLONG;
     } else if (inode->link_count >= 0xffff) {
-        printf("SYS: max link count reached\n");
+        printf("alloc_dir_entry: max link count reached\n");
         return -EMLINK;
     } else if ((inode->mode & M_DIR) == 0) {
-        printf("SYS: not a directory\n");
+        printf("alloc_dir_entry: not a directory\n");
         return -ENOTDIR;
     }
 
@@ -1201,7 +1180,7 @@ int free_last_inode_data_block(inode_t* inode) {
         if (offset % INODE_DOUBLE_INDIRECT_BLOCKS == 0) free_blocks(&level2.blockptr, 1);
         if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) free_blocks(&level3.blockptr, 1);
     } else {
-        printf("SYS: relative data offset out of bounds\n");
+        printf("free_last_inode_data_block: relative data offset out of bounds\n");
     }
 
     if (absolute_blockptr) free_blocks(&absolute_blockptr, 1);
@@ -1212,7 +1191,7 @@ int free_last_inode_data_block(inode_t* inode) {
 int free_bitmap(blockptr_t index, blockptr_t bitmap_offset, blockptr_t bitmap_length) {
     blockptr_t offset = index / (BLOCK_SIZE * 8);
     if (offset > bitmap_length) {
-        printf("SYS: bitmap index out of bounds\n");
+        printf("free_bitmap: bitmap index out of bounds\n");
         return -EFAULT;
     }
 
@@ -1231,7 +1210,7 @@ int free_bitmap(blockptr_t index, blockptr_t bitmap_offset, blockptr_t bitmap_le
 // free entry from directory
 int free_dir_entry(inode_t* inode, const char* name) {
     if ((inode->mode & M_DIR) == 0) {
-        printf("SYS: not a directory\n");
+        printf("free_dir_entry: not a directory\n");
         return -ENOTDIR;
     }
 
@@ -1255,7 +1234,7 @@ int free_dir_entry(inode_t* inode, const char* name) {
     }
 
     if (free_entry == 0) {
-        printf("SYS: name does not exist in directory\n");
+        printf("free_dir_entry: name does not exist in directory\n");
         return -ENOENT;
     }
 
@@ -1324,13 +1303,13 @@ int unlink_file_or_dir(const char* path, int allow_dir) {
     if (err) return err;
 
     if (f.inodeptr == 0) {
-        printf("unlink: no such file or directory\n");
+        printf("unlink_file_or_dir: no such file or directory\n");
         return -ENOENT;
     } else if ((f.inode.mode & M_DIR) && !allow_dir) {
-        printf("unlink: is a directory\n");
+        printf("unlink_file_or_dir: is a directory\n");
         return -EISDIR;
     } else if ((f.inode.mode & M_DIR) && f.inode.atom_count > 2) {
-        printf("unlink: directory is not empty\n");
+        printf("unlink_file_or_dir: directory is not empty\n");
         return -ENOTEMPTY;
     }
 
