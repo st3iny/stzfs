@@ -43,7 +43,7 @@ int find_inode_data_blockptrs(const inode_t* inode, blockptr_t* blockptrs);
 void read_block(blockptr_t blockptr, void* block);
 void read_inode(inodeptr_t inodeptr, inode_t* inode);
 blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* block);
-void read_inode_data_blocks(const inode_t* inode, void* data_block_array);
+int read_inode_data_blocks(const inode_t* inode, void* data_block_array);
 
 // alloc in bitmap
 blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t bitmap_length);
@@ -175,11 +175,9 @@ void* stzfs_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
 
 // get file stats
 int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file_info) {
-    printf("stzfs_getattr: get attributes of %s\n", path);
-
     // TODO: reuse inode
     if (!file_exists(path)) {
-        printf("stat: no such file\n");
+        // printf("stat: no such file\n");
         return -ENOENT;
     }
 
@@ -795,28 +793,16 @@ blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* 
 }
 
 // read all data blocks of an inode
-void read_inode_data_blocks(const inode_t* inode, void* data_block_array) {
-    int data_offset = 0;
-    data_block* data_blocks = (data_block*)data_block_array;
+int read_inode_data_blocks(const inode_t* inode, void* data_block_array) {
+    blockptr_t blockptrs[inode->block_count];
+    int err = find_inode_data_blockptrs(inode, blockptrs);
+    if (err) return err;
 
-    // read direct blocks
-    for (int i = 0; i < INODE_DIRECT_BLOCKS && data_offset < inode->block_count; i++) {
-        read_block(inode->data_direct[i], &data_blocks[data_offset]);
-        data_offset++;
+    for (size_t offset = 0; offset < inode->block_count; offset++) {
+        read_block(blockptrs[offset], &((data_block*)data_block_array)[offset]);
     }
 
-    // read single indirect block
-    indirect_block indirect;
-    read_block(inode->data_single_indirect, &indirect);
-    for (int i = 0; i < INDIRECT_BLOCK_ENTRIES && data_offset < inode->block_count; i++) {
-        read_block(indirect.blocks[i], &data_blocks[data_offset + i]);
-        data_offset++;
-    }
-
-    // TODO: read double and triple indirect blocks
-    if (data_offset < inode->block_count) {
-        printf("read_inode_data_blocks: did not read all inode data blocks\n");
-    }
+    return 0;
 }
 
 // write block to disk
@@ -1212,44 +1198,53 @@ int free_dir_entry(inode_t* inode, const char* name) {
     if ((inode->mode & M_DIR) == 0) {
         printf("free_dir_entry: not a directory\n");
         return -ENOTDIR;
+    } else if (strcmp(name, ".") == 0) {
+        printf("free_dir_entry: can't free protected entry .\n");
+        return -EPERM;
+    } else if (strcmp(name, "..") == 0) {
+        printf("free_dir_entry: can't free protected entry ..\n");
+        return -EPERM;
     }
 
     dir_block dir_blocks[inode->block_count];
     read_inode_data_blocks(inode, dir_blocks);
 
     // search name in directory
-    size_t free_entry = 0;
+    int entry_found = 0;
+    size_t free_entry;
     blockptr_t free_entry_offset;
-    for (blockptr_t offset = 0; offset < inode->block_count; offset++) {
+    for (blockptr_t offset = 0; offset < inode->block_count && !entry_found; offset++) {
         for (size_t entry = 0; entry < DIR_BLOCK_ENTRIES; entry++) {
-            dir_block_entry* entry_data = &dir_blocks[offset].entries[entry];
-            if (strcmp(entry_data->name, name) == 0) {
+            if (offset * DIR_BLOCK_ENTRIES + entry >= inode->atom_count) break;
+
+            if (strcmp(dir_blocks[offset].entries[entry].name, name) == 0) {
                 free_entry = entry;
                 free_entry_offset = offset;
+                entry_found = 1;
                 break;
             }
         }
-
-        if (free_entry != 0) break;
     }
 
-    if (free_entry == 0) {
+    if (!entry_found) {
         printf("free_dir_entry: name does not exist in directory\n");
         return -ENOENT;
     }
 
     // get last entry offsets
-    size_t last_entry = inode->atom_count % DIR_BLOCK_ENTRIES;
-    blockptr_t last_entry_offset = inode->atom_count / DIR_BLOCK_ENTRIES;
+    size_t last_entry = (inode->atom_count - 1) % DIR_BLOCK_ENTRIES;
+    blockptr_t last_entry_offset = inode->block_count - 1;
 
-    if (free_entry == 0 && free_entry_offset == last_entry_offset && free_entry == last_entry) {
-        // the whole last block can be deleted
-        free_last_inode_data_block(inode);
-    } else if (free_entry_offset != last_entry_offset || free_entry != last_entry) {
-        // copy last entry to removed entry if they are in different blocks
+    // copy last entry to removed entry if they are not the same
+    if (free_entry != last_entry || free_entry_offset != last_entry_offset) {
         dir_block* free_block = &dir_blocks[free_entry_offset];
         free_block->entries[free_entry] = dir_blocks[last_entry_offset].entries[last_entry];
         write_inode_data_block(inode, free_entry_offset, free_block);
+    }
+
+    if (last_entry == 0) {
+        // the whole last block can be deleted
+        free_last_inode_data_block(inode);
     }
 
     inode->atom_count--;
