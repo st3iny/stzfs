@@ -78,7 +78,7 @@ static int unlink_file_or_dir(const char* path, int allow_dir);
 // init filesystem
 blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     blockptr_t blocks = vm_size() / BLOCK_SIZE;
-    printf("SYS: Creating file system with %i blocks and %i inodes.\n", blocks, inode_count);
+    printf("stzfs_makefs: creating file system with %i blocks and %i inodes\n", blocks, inode_count);
 
     // calculate bitmap and inode table lengths
     blockptr_t block_bitmap_length = uint32_div_ceil(blocks, BLOCK_SIZE * 8);
@@ -107,7 +107,7 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     for (blockptr_t blockptr = 0; blockptr < initial_block_count; blockptr++) {
         vm_write(blockptr * BLOCK_SIZE, &initial_block, BLOCK_SIZE);
     }
-    printf("SYS: Wrote %i initial blocks.\n", initial_block_count);
+    printf("stzfs_makefs: wrote %i initial blocks\n", initial_block_count);
 
     // write initial block bitmap
     bitmap_block ba;
@@ -142,7 +142,7 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     memset(&root_dir_block, 0, BLOCK_SIZE);
     root_dir_block.entries[0] = (dir_block_entry) {.name = ".", .inode = 1};
     blockptr_t root_dir_block_ptr = alloc_block(&root_dir_block);
-    printf("SYS: Wrote root dir block at %i.\n", root_dir_block_ptr);
+    printf("stzfs_makefs: wrote root dir block at %i\n", root_dir_block_ptr);
 
     // create root inode
     time_t now;
@@ -161,7 +161,7 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
 
     // write root inode
     inodeptr_t root_inode_ptr = alloc_inode(&root_inode);
-    printf("SYS: Wrote root inode with id %i.\n", root_inode_ptr);
+    printf("stzfs_makefs: wrote root inode with id %i\n", root_inode_ptr);
 
     return blocks;
 }
