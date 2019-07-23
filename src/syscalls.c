@@ -22,7 +22,8 @@ struct fuse_operations stzfs_ops = {
     .write = stzfs_write,
     .mkdir = stzfs_mkdir,
     .rmdir = stzfs_rmdir,
-    .readdir = stzfs_readdir
+    .readdir = stzfs_readdir,
+    .statfs = stzfs_statfs
 };
 
 // structs
@@ -466,8 +467,11 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     int err = find_file_inode2(path, &dir, &parent, name);
     if (err) return err;
 
-    if (dir.inodeptr != 0) {
-        printf("stzfs_mkdir: file exists\n");
+    if (parent.inodeptr == 0) {
+        printf("stzfs_mkdir: parent not existing\n");
+        return -ENOENT;
+    } else if (dir.inodeptr != 0) {
+        printf("stzfs_mkdir: file or directory exists\n");
         return -EEXIST;
     }
 
@@ -548,6 +552,23 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
             filler(buffer, entry_data->name, NULL, 0, 0);
         }
     }
+
+    return 0;
+}
+
+// retrieve filesystem stats
+int stzfs_statfs(const char* path, struct statvfs* stat) {
+    super_block sb;
+    read_block(0, &sb);
+
+    stat->f_bsize = BLOCK_SIZE;
+    stat->f_frsize = BLOCK_SIZE;
+    stat->f_blocks = sb.block_count;
+    stat->f_bfree = sb.free_blocks;
+    stat->f_bavail = sb.free_blocks;
+    stat->f_files = sb.inode_count;
+    stat->f_ffree = sb.free_inodes;
+    stat->f_namemax = MAX_FILENAME_LENGTH;
 
     return 0;
 }

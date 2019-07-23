@@ -27,6 +27,8 @@ int stzfs_rmdir(const char* path);
 int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t offset,
                   struct fuse_file_info* file_info, enum fuse_readdir_flags flags);
 
+int stzfs_statfs(const char* path, struct statvfs* stat);
+
 extern struct fuse_operations stzfs_ops;
 
 #endif // FILESYSTEM_SYSCALLS_H

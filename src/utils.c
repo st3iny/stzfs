@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     };
 
     // set vm hdd file
-    vm_config_set_file(VM_HDD_PATH);
+    vm_config_set_file(argv[1]);
 
     // loop as long as there are long options available
     int opt;
