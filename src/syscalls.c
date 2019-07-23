@@ -32,48 +32,48 @@ typedef struct file {
 } file;
 
 // find data in read blocks
-int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
+static int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
                     inodeptr_t* parent_inodeptr, inode_t* parent_inode, char* last_name);
-int find_file_inode2(const char* file_path, file* f, file* parent, char* last_name);
-int find_name(const char* name, const inode_t* inode, inodeptr_t* found_inodeptr);
-blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset);
-int find_inode_data_blockptrs(const inode_t* inode, blockptr_t* blockptrs);
+static int find_file_inode2(const char* file_path, file* f, file* parent, char* last_name);
+static int find_name(const char* name, const inode_t* inode, inodeptr_t* found_inodeptr);
+static blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset);
+static int find_inode_data_blockptrs(const inode_t* inode, blockptr_t* blockptrs);
 
 // read from disk
-void read_block(blockptr_t blockptr, void* block);
-void read_inode(inodeptr_t inodeptr, inode_t* inode);
-blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* block);
-int read_inode_data_blocks(const inode_t* inode, void* data_block_array);
+static void read_block(blockptr_t blockptr, void* block);
+static void read_inode(inodeptr_t inodeptr, inode_t* inode);
+static blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* block);
+static int read_inode_data_blocks(const inode_t* inode, void* data_block_array);
 
 // alloc in bitmap
-blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t bitmap_length);
-blockptr_t alloc_block(const void* new_block);
-inodeptr_t alloc_inode(const inode_t* new_inode);
-blockptr_t alloc_inode_data_block(inode_t* inode, const void* block);
-int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr);
+static blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t bitmap_length);
+static blockptr_t alloc_block(const void* new_block);
+static inodeptr_t alloc_inode(const inode_t* new_inode);
+static blockptr_t alloc_inode_data_block(inode_t* inode, const void* block);
+static int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr);
 
 // free
-int free_bitmap(blockptr_t index, blockptr_t bitmap_offset, blockptr_t bitmap_length);
-int free_blocks(const blockptr_t* blockptrs, size_t length);
-int free_inode(inodeptr_t inodeptr, inode_t* inode);
-int free_inode_data_blocks(inode_t* inode, blockptr_t offset);
-int free_last_inode_data_block(inode_t* inode);
-int free_dir_entry(inode_t* inode, const char* name);
+static int free_bitmap(blockptr_t index, blockptr_t bitmap_offset, blockptr_t bitmap_length);
+static int free_blocks(const blockptr_t* blockptrs, size_t length);
+static int free_inode(inodeptr_t inodeptr, inode_t* inode);
+static int free_inode_data_blocks(inode_t* inode, blockptr_t offset);
+static int free_last_inode_data_block(inode_t* inode);
+static int free_dir_entry(inode_t* inode, const char* name);
 
 // write to disk
-void write_block(blockptr_t blockptr, const void* block);
-void write_inode(inodeptr_t inodeptr, const inode_t* inode);
-blockptr_t write_inode_data_block(const inode_t* inode, blockptr_t offset, const void* block);
-int write_dir_entry(const inode_t* inode, const char* name, inodeptr_t target_inodeptr);
+static void write_block(blockptr_t blockptr, const void* block);
+static void write_inode(inodeptr_t inodeptr, const inode_t* inode);
+static blockptr_t write_inode_data_block(const inode_t* inode, blockptr_t offset, const void* block);
+static int write_dir_entry(const inode_t* inode, const char* name, inodeptr_t target_inodeptr);
 
 // file helpers
-int file_exists(const char* path);
+static int file_exists(const char* path);
 
 // misc helpers
-uint32_t uint32_div_ceil(uint32_t a, uint32_t b);
-int read_or_alloc_block(blockptr_t* blockptr, void* block);
-void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
-int unlink_file_or_dir(const char* path, int allow_dir);
+static uint32_t uint32_div_ceil(uint32_t a, uint32_t b);
+static int read_or_alloc_block(blockptr_t* blockptr, void* block);
+static void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
+static int unlink_file_or_dir(const char* path, int allow_dir);
 
 // init filesystem
 blockptr_t stzfs_makefs(inodeptr_t inode_count) {

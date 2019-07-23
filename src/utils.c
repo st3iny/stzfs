@@ -9,6 +9,15 @@
 #include "utils.h"
 #include "vm.h"
 
+// helpers
+static void utils_print_block_range(blockptr_t offset, blockptr_t length);
+static int utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap,
+                                  blockptr_t block_bitmap_length);
+static void utils_print_allocation_status(const char* title, blockptr_t alloc_start,
+                                          blockptr_t alloc_end, blockptr_t bitmap_offset,
+                                          blockptr_t bitmap_length);
+
+// cli entry point
 int main(int argc, char** argv) {
     // declare long options
     static void (*fun_ptr_arr[])(const char*) = {
