@@ -75,6 +75,14 @@ static uint32_t uint32_div_ceil(uint32_t a, uint32_t b);
 static int read_or_alloc_block(blockptr_t* blockptr, void* block);
 static void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
 static int unlink_file_or_dir(const char* path, int allow_dir);
+static stzfs_mode_t mode_posix_to_stzfs(mode_t mode);
+static mode_t mode_stzfs_to_posix(stzfs_mode_t stzfs_mode);
+
+// overwrite root dir permissions
+#define STZFS_MOUNT_AS_USER 1
+
+// show .. entry in root dir
+#define STZFS_SHOW_DOUBLE_DOTS_IN_ROOT_DIR 1
 
 // init filesystem
 blockptr_t stzfs_makefs(inodeptr_t inode_count) {
@@ -171,6 +179,7 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
 void* stzfs_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
     cfg->kernel_cache = 1;
     cfg->use_ino = 1;
+
     return NULL;
 }
 
@@ -178,7 +187,8 @@ void* stzfs_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
 int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file_info) {
     // TODO: reuse inode
     if (!file_exists(path)) {
-        // printf("stat: no such file\n");
+        // spams stdout
+        // printf("stzfs_getattr: no such file\n");
         return -ENOENT;
     }
 
@@ -187,16 +197,27 @@ int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file
     if (err) return err;
 
     if ((f.inode.mode & M_DIR)) {
-        st->st_ino = f.inodeptr;
-        st->st_mode = S_IFDIR | 0755;
         st->st_size = f.inode.atom_count * sizeof(dir_block_entry);
-        st->st_nlink = f.inode.link_count;
     } else {
-        st->st_ino = f.inodeptr;
-        st->st_mode = S_IFREG | 0444;
         st->st_size = f.inode.atom_count;
-        st->st_nlink = f.inode.link_count;
     }
+
+    st->st_ino = f.inodeptr;
+    st->st_mode = mode_stzfs_to_posix(f.inode.mode);
+    st->st_nlink = f.inode.link_count;
+#if STZFS_MOUNT_AS_USER
+    if (strcmp(path, "/") == 0) {
+        struct fuse_context* context = fuse_get_context();
+        st->st_uid = context->uid;
+        st->st_gid = context->gid;
+    } else {
+#endif
+    st->st_uid = f.inode.uid;
+    st->st_gid = f.inode.gid;
+#if STZFS_MOUNT_AS_USER
+    }
+#endif
+    st->st_mtime = f.inode.mtime;
 
     return 0;
 }
@@ -378,23 +399,26 @@ int stzfs_create(const char* file_path, mode_t mode, struct fuse_file_info* file
     if (inodeptr != 0) {
         printf("stzfs_create: file is already existing\n");
         return -EEXIST;
-    } else {
-        // create new file
-        time_t now;
-        time(&now);
-        // TODO: implement mode
-        inode.mode = 0;
-        inode.crtime = now;
-        inode.mtime = now;
-        inode.link_count = 1;
-
-        inodeptr = alloc_inode(&inode);
-        alloc_dir_entry(&parent_inode, last_name, inodeptr);
-        write_inode(parent_inodeptr, &parent_inode);
-
-        file_info->fh = inodeptr;
-        return 0;
     }
+
+    struct fuse_context* context = fuse_get_context();
+
+    // create new file
+    time_t now;
+    time(&now);
+    inode.mode = mode_posix_to_stzfs(mode);
+    inode.uid = context->uid;
+    inode.gid = context->gid;
+    inode.crtime = now;
+    inode.mtime = now;
+    inode.link_count = 1;
+
+    inodeptr = alloc_inode(&inode);
+    alloc_dir_entry(&parent_inode, last_name, inodeptr);
+    write_inode(parent_inodeptr, &parent_inode);
+
+    file_info->fh = inodeptr;
+    return 0;
 }
 
 // rename a file
@@ -513,10 +537,14 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     parent.inode.link_count++;
     write_inode(parent.inodeptr, &parent.inode);
 
+    struct fuse_context* context = fuse_get_context();
+
     // create and write inode
     time_t now;
     time(&now);
-    dir.inode.mode = M_DIR;
+    dir.inode.mode = mode_posix_to_stzfs(mode | S_IFDIR);
+    dir.inode.uid = context->uid;
+    dir.inode.gid = context->gid;
     dir.inode.link_count = 2;
     dir.inode.atom_count = 2;
     dir.inode.block_count = 1;
@@ -556,6 +584,12 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
 
     dir_block dir_blocks[dir.inode.block_count];
     read_inode_data_blocks(&dir.inode, dir_blocks);
+
+#if STZFS_SHOW_DOUBLE_DOTS_IN_ROOT_DIR
+    if (strcmp(path, "/") == 0) {
+        filler(buffer, "..", NULL, 0, 0);
+    }
+#endif
 
     for (blockptr_t offset = 0; offset < dir.inode.block_count; offset++) {
         for (size_t entry = 0; entry < DIR_BLOCK_ENTRIES; entry++) {
@@ -1365,4 +1399,65 @@ int unlink_file_or_dir(const char* path, int allow_dir) {
     free_inode(f.inodeptr, &f.inode);
 
     return 0;
+}
+
+// convert posix file mode to stzfs
+stzfs_mode_t mode_posix_to_stzfs(mode_t mode) {
+    stzfs_mode_t stzfs_mode = 0;
+
+    // file type
+    if (mode & S_IFDIR) stzfs_mode |= M_DIR;
+
+    // user permissions
+    if (mode & S_IRUSR) stzfs_mode |= M_RU;
+    if (mode & S_IWUSR) stzfs_mode |= M_WU;
+    if (mode & S_IXUSR) stzfs_mode |= M_XU;
+
+    // group permissions
+    if (mode & S_IRGRP) stzfs_mode |= M_RG;
+    if (mode & S_IWGRP) stzfs_mode |= M_WG;
+    if (mode & S_IXGRP) stzfs_mode |= M_XG;
+
+    // other permissions
+    if (mode & S_IROTH) stzfs_mode |= M_RO;
+    if (mode & S_IWOTH) stzfs_mode |= M_WO;
+    if (mode & S_IXOTH) stzfs_mode |= M_XO;
+
+    // special bits
+    if (mode & S_ISUID) stzfs_mode |= M_SETUID;
+    if (mode & S_ISGID) stzfs_mode |= M_SETGID;
+    if (mode & S_ISVTX) stzfs_mode |= M_STICKY;
+
+    return stzfs_mode;
+}
+
+// convert stzfs file mode to posix
+mode_t mode_stzfs_to_posix(stzfs_mode_t stzfs_mode) {
+    mode_t mode = 0;
+
+    // file type
+    if (stzfs_mode & M_DIR) mode |= S_IFDIR;
+    else                    mode |= S_IFREG;
+
+    // user permissions
+    if (stzfs_mode & M_RU) mode |= S_IRUSR;
+    if (stzfs_mode & M_WU) mode |= S_IWUSR;
+    if (stzfs_mode & M_XU) mode |= S_IXUSR;
+
+    // group permissions
+    if (stzfs_mode & M_RG) mode |= S_IRGRP;
+    if (stzfs_mode & M_WG) mode |= S_IWGRP;
+    if (stzfs_mode & M_XG) mode |= S_IXGRP;
+
+    // other permissions
+    if (stzfs_mode & M_RO) mode |= S_IROTH;
+    if (stzfs_mode & M_WO) mode |= S_IWOTH;
+    if (stzfs_mode & M_XO) mode |= S_IXOTH;
+
+    // special bits
+    if (stzfs_mode & M_SETUID) mode |= S_ISUID;
+    if (stzfs_mode & M_SETGID) mode |= S_ISGID;
+    if (stzfs_mode & M_STICKY) mode |= S_ISVTX;
+
+    return mode;
 }

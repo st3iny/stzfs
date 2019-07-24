@@ -36,7 +36,7 @@ typedef struct super_block {
 
 // 128 bytes
 typedef struct inode_t {
-    int16_t mode;
+    stzfs_mode_t mode;
     int16_t uid;
     int16_t gid;
     time_t crtime;
