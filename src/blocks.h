@@ -35,7 +35,7 @@ typedef struct super_block {
 #define INODE_TRIPLE_INDIRECT_OFFSET (INODE_DOUBLE_INDIRECT_OFFSET + INODE_DOUBLE_INDIRECT_BLOCKS)
 
 // 128 bytes
-typedef struct inode {
+typedef struct inode_t {
     int16_t mode;
     int16_t uid;
     int16_t gid;

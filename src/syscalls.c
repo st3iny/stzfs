@@ -426,6 +426,7 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
     if (err) return err;
 
     // TODO: update parent dir pointer if src is a dir
+    // TODO: check inode bounds
     // replace dst with src
     src.inode.link_count++;
     write_inode(src.inodeptr, &src.inode);
@@ -441,6 +442,17 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
     } else {
         alloc_dir_entry(&dst_parent.inode, dst_last_name, src.inodeptr);
         write_inode(dst_parent.inodeptr, &dst_parent.inode);
+    }
+
+    // rewrite double dot inodeptr
+    if ((src.inode.mode & M_DIR) && src_parent.inodeptr != dst_parent.inodeptr) {
+        dst_parent.inode.link_count++;
+        write_inode(dst_parent.inodeptr, &dst_parent.inode);
+
+        write_dir_entry(&src.inode, "..", dst_parent.inodeptr);
+
+        src_parent.inode.link_count--;
+        write_inode(src_parent.inodeptr, &src_parent.inode);
     }
 
     if (src_parent.inodeptr == dst_parent.inodeptr) {
@@ -496,6 +508,7 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     block.entries[1] = (dir_block_entry) {.name = "..", .inode=parent.inodeptr};
     blockptr_t blockptr = alloc_block(&block);
 
+    // TODO: check inode bounds
     // increase parent inode link counter
     parent.inode.link_count++;
     write_inode(parent.inodeptr, &parent.inode);
@@ -938,11 +951,19 @@ blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t 
 // write a block in place (BLOCK_SIZE bytes of given object)
 blockptr_t alloc_block(const void* new_block) {
     super_block sb;
-    vm_read(0, &sb, BLOCK_SIZE);
+    read_block(0, &sb);
 
     // get next free block and write data block
     blockptr_t next_free_block = alloc_bitmap("block", sb.block_bitmap, sb.block_bitmap_length);
-    vm_write(next_free_block * BLOCK_SIZE, new_block, BLOCK_SIZE);
+    if (next_free_block == 0) {
+        printf("alloc_block: could not allocate block");
+        return -ENOSPC;
+    }
+    write_block(next_free_block, new_block);
+
+    // update superblock
+    sb.free_blocks--;
+    write_block(0, &sb);
 
     return next_free_block;
 }
@@ -1030,10 +1051,11 @@ blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
 
 // alloc an entry in a directory inode
 int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr) {
+    // set max_link_count to 0xffff - 1 to prevent a deadlock
     if (strlen(name) > MAX_FILENAME_LENGTH) {
         printf("alloc_dir_entry: filename too long\n");
         return -ENAMETOOLONG;
-    } else if (inode->link_count >= 0xffff) {
+    } else if (inode->link_count >= 0xfffe) {
         printf("alloc_dir_entry: max link count reached\n");
         return -EMLINK;
     } else if ((inode->mode & M_DIR) == 0) {
@@ -1080,6 +1102,10 @@ int free_blocks(const blockptr_t* blockptrs, size_t length) {
         int err = free_bitmap(blockptrs[offset], sb.block_bitmap, sb.block_bitmap_length);
         if (err) return err;
     }
+
+    // update superblock
+    sb.free_blocks += length;
+    write_block(0, &sb);
 
     return 0;
 }
@@ -1327,6 +1353,10 @@ int unlink_file_or_dir(const char* path, int allow_dir) {
     } else if ((f.inode.mode & M_DIR) && f.inode.atom_count > 2) {
         printf("unlink_file_or_dir: directory is not empty\n");
         return -ENOTEMPTY;
+    }
+
+    if ((f.inode.mode & M_DIR)) {
+        parent.inode.link_count--;
     }
 
     f.inode.link_count--;
