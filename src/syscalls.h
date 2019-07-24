@@ -1,9 +1,7 @@
 #ifndef FILESYSTEM_SYSCALLS_H
 #define FILESYSTEM_SYSCALLS_H
 
-#define FUSE_USE_VERSION 34
-#include <fuse3/fuse.h>
-
+#include "fuse.h"
 #include "types.h"
 
 blockptr_t stzfs_makefs(inodeptr_t inode_count);

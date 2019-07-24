@@ -1,10 +1,9 @@
-#define FUSE_USE_VERSION 34
 #include <fcntl.h>
-#include <fuse3/fuse.h>
 #include <math.h>
 #include <stdio.h>
 #include <unistd.h>
 
+#include "fuse.h"
 #include "syscalls.h"
 #include "types.h"
 #include "vm.h"
