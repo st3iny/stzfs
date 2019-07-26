@@ -5,6 +5,7 @@
 #include <string.h>
 #include <linux/fs.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "blocks.h"
 #include "syscalls.h"
@@ -13,6 +14,7 @@
 // fuse operations
 struct fuse_operations stzfs_ops = {
     .init = stzfs_init,
+    .destroy = stzfs_destroy,
     .create = stzfs_create,
     .rename = stzfs_rename,
     .unlink = stzfs_unlink,
@@ -23,7 +25,10 @@ struct fuse_operations stzfs_ops = {
     .mkdir = stzfs_mkdir,
     .rmdir = stzfs_rmdir,
     .readdir = stzfs_readdir,
-    .statfs = stzfs_statfs
+    .statfs = stzfs_statfs,
+    .chown = stzfs_chown,
+    .chmod = stzfs_chmod,
+    .truncate = stzfs_truncate
 };
 
 // structs
@@ -72,6 +77,7 @@ static int file_exists(const char* path);
 
 // misc helpers
 static uint32_t uint32_div_ceil(uint32_t a, uint32_t b);
+static int64_t int64_div_ceil(int64_t a, int64_t b);
 static int read_or_alloc_block(blockptr_t* blockptr, void* block);
 static void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
 static int unlink_file_or_dir(const char* path, int allow_dir);
@@ -175,12 +181,17 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     return blocks;
 }
 
-// init fuse
+// init filesystem
 void* stzfs_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
     cfg->kernel_cache = 1;
     cfg->use_ino = 1;
 
     return NULL;
+}
+
+// clean up filesystem
+void stzfs_destroy(void* private_data) {
+    vm_destroy();
 }
 
 // get file stats
@@ -207,9 +218,8 @@ int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file
     st->st_nlink = f.inode.link_count;
 #if STZFS_MOUNT_AS_USER
     if (strcmp(path, "/") == 0) {
-        struct fuse_context* context = fuse_get_context();
-        st->st_uid = context->uid;
-        st->st_gid = context->gid;
+        st->st_uid = getuid();
+        st->st_gid = getgid();
     } else {
 #endif
     st->st_uid = f.inode.uid;
@@ -316,7 +326,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     read_inode(inodeptr, &inode);
 
     // check file size limits
-    size_t max_block_offset = uint32_div_ceil(offset + length, BLOCK_SIZE);
+    size_t max_block_offset = int64_div_ceil(offset + length, BLOCK_SIZE);
     if (max_block_offset >= INODE_MAX_BLOCKS) {
         printf("stzfs_write: max file size exceeded\n");
         return -EFBIG;
@@ -325,7 +335,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     // check continuity
     if (offset > inode.atom_count) {
         printf("stzfs_write: offset too high\n");
-        return -ESPIPE;
+        return -EPERM;
     }
 
     // write first partial block
@@ -616,6 +626,83 @@ int stzfs_statfs(const char* path, struct statvfs* stat) {
     stat->f_files = sb.inode_count;
     stat->f_ffree = sb.free_inodes;
     stat->f_namemax = MAX_FILENAME_LENGTH;
+
+    return 0;
+}
+
+// change file owner
+int stzfs_chown(const char* path, uid_t uid, gid_t gid, struct fuse_file_info* fi) {
+    file f;
+    if (fi == NULL) {
+        find_file_inode2(path, &f, NULL, NULL);
+    } else {
+        f.inodeptr = fi->fh;
+        read_inode(f.inodeptr, &f.inode);
+    }
+
+    if (f.inodeptr == 0) {
+        printf("stzfs_chown: no such file\n");
+        return -ENOENT;
+    }
+
+    f.inode.uid = uid;
+    f.inode.gid = gid;
+    write_inode(f.inodeptr, &f.inode);
+
+    return 0;
+}
+
+// change file permissions
+int stzfs_chmod(const char* path, mode_t mode, struct fuse_file_info* fi) {
+    file f;
+    if (fi == NULL) {
+        find_file_inode2(path, &f, NULL, NULL);
+    } else {
+        f.inodeptr = fi->fh;
+        read_inode(f.inodeptr, &f.inode);
+    }
+
+    if (f.inodeptr == 0) {
+        printf("stzfs_chmod: no such file\n");
+        return -ENOENT;
+    }
+
+    f.inode.mode = mode_posix_to_stzfs(mode);
+    write_inode(f.inodeptr, &f.inode);
+
+    return 0;
+}
+
+// truncate file
+int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
+    file f;
+    if (fi == NULL) {
+        find_file_inode2(path, &f, NULL, NULL);
+    } else {
+        f.inodeptr = fi->fh;
+        read_inode(f.inodeptr, &f.inode);
+    }
+
+    if (f.inodeptr == 0) {
+        printf("stzfs_truncate: no such file\n");
+        return -ENOENT;
+    }
+
+    if (offset > f.inode.atom_count) {
+        printf("stzfs_truncate: offset out of bounds\n");
+        return -EPERM;
+    }
+
+    if (offset != f.inode.atom_count) {
+        f.inode.atom_count = offset;
+        write_inode(f.inodeptr, &f.inode);
+    }
+
+    blockptr_t block_offset = int64_div_ceil(offset, BLOCK_SIZE);
+    if (block_offset < f.inode.block_count) {
+        free_inode_data_blocks(&f.inode, block_offset);
+        write_inode(f.inodeptr, &f.inode);
+    }
 
     return 0;
 }
@@ -1347,6 +1434,14 @@ int file_exists(const char* path) {
 // integer divide a / b and ceil of a % b > 0
 uint32_t uint32_div_ceil(uint32_t a, uint32_t b) {
     uint32_t result = a / b;
+    if (a % b > 0) {
+        result++;
+    }
+    return result;
+}
+
+int64_t int64_div_ceil(int64_t a, int64_t b) {
+    int64_t result = a / b;
     if (a % b > 0) {
         result++;
     }
