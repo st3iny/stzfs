@@ -15,4 +15,7 @@ int vm_write(off_t addr, const void* buffer, size_t length);
 int vm_read(off_t addr, void* buffer, size_t length);
 off_t vm_size(void);
 
+// cleanup
+void vm_destroy(void);
+
 #endif // FILESYSTEM_VM_H

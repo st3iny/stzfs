@@ -8,6 +8,15 @@
 
 #define VM_LOG(msg) printf("VM: %s\n", msg)
 
+// use mmap instead of direct io
+#define VM_USE_MMAP 0
+#if VM_USE_MMAP
+#include <sys/mman.h>
+#include <string.h>
+
+static void* fp = NULL;
+#endif
+
 // global vars
 static int fd = -1; // file descriptor
 static long size = -1; // total virtual hard disk size
@@ -43,12 +52,22 @@ off_t vm_config_set_file(const char* path) {
     struct stat st;
     fstat(fd, &st);
     size = st.st_size;
+
+#if VM_USE_MMAP
+    fp = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+#endif
+
     return size;
 }
 
 // low level methods
 int vm_write(off_t addr, const void* buffer, size_t length) {
+#if VM_USE_MMAP
+    if (fp == NULL) {
+#else
     if (fd == -1) {
+#endif
         VM_LOG("Virtual hard disk not created.");
         return -1;
     }
@@ -57,13 +76,22 @@ int vm_write(off_t addr, const void* buffer, size_t length) {
         return -1;
     }
 
+#if VM_USE_MMAP
+    memcpy(fp + addr, buffer, length);
+    return length;
+#else
     // seek and write to virtual hard disk
     lseek(fd, addr, SEEK_SET);
     return write(fd, buffer, length);
+#endif
 }
 
 int vm_read(off_t addr, void* buffer, size_t length) {
+#if VM_USE_MMAP
+    if (fp == NULL) {
+#else
     if (fd == -1) {
+#endif
         VM_LOG("Virtual hard disk not created.");
         return -1;
     }
@@ -72,11 +100,25 @@ int vm_read(off_t addr, void* buffer, size_t length) {
         return -1;
     }
 
+#if VM_USE_MMAP
+    memcpy(buffer, fp + addr, length);
+    return length;
+#else
     // seek and read from virtual hard disk
     lseek(fd, addr, SEEK_SET);
     return read(fd, buffer, length);
+#endif
 }
 
 off_t vm_size() {
     return size;
+}
+
+// destroy vm
+void vm_destroy(void) {
+#if VM_USE_MMAP
+    munmap(fp, size);
+#else
+    close(fd);
+#endif
 }
