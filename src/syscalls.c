@@ -70,14 +70,13 @@ static int free_dir_entry(inode_t* inode, const char* name);
 static void write_block(blockptr_t blockptr, const void* block);
 static void write_inode(inodeptr_t inodeptr, const inode_t* inode);
 static blockptr_t write_inode_data_block(const inode_t* inode, blockptr_t offset, const void* block);
+static int write_or_alloc_inode_data_block(inode_t* inode, blockptr_t blockptr, const void* block);
 static int write_dir_entry(const inode_t* inode, const char* name, inodeptr_t target_inodeptr);
 
 // file helpers
 static int file_exists(const char* path);
 
 // misc helpers
-static uint32_t uint32_div_ceil(uint32_t a, uint32_t b);
-static int64_t int64_div_ceil(int64_t a, int64_t b);
 static int read_or_alloc_block(blockptr_t* blockptr, void* block);
 static void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
 static int unlink_file_or_dir(const char* path, int allow_dir);
@@ -90,15 +89,18 @@ static mode_t mode_stzfs_to_posix(stzfs_mode_t stzfs_mode);
 // show .. entry in root dir
 #define STZFS_SHOW_DOUBLE_DOTS_IN_ROOT_DIR 1
 
+// integer divide a / b and ceil if a % b > 0 (there is a remainder)
+#define DIV_CEIL(a, b) (((a) / (b)) + (((a) % (b)) != 0))
+
 // init filesystem
 blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     blockptr_t blocks = vm_size() / BLOCK_SIZE;
     printf("stzfs_makefs: creating file system with %i blocks and %i inodes\n", blocks, inode_count);
 
     // calculate bitmap and inode table lengths
-    blockptr_t block_bitmap_length = uint32_div_ceil(blocks, BLOCK_SIZE * 8);
-    inodeptr_t inode_table_length = uint32_div_ceil(inode_count, BLOCK_SIZE / sizeof(inode_t));
-    inodeptr_t inode_bitmap_length = uint32_div_ceil(inode_count, BLOCK_SIZE * 8);
+    blockptr_t block_bitmap_length = DIV_CEIL(blocks, BLOCK_SIZE * 8);
+    inodeptr_t inode_table_length = DIV_CEIL(inode_count, BLOCK_SIZE / sizeof(inode_t));
+    inodeptr_t inode_bitmap_length = DIV_CEIL(inode_count, BLOCK_SIZE * 8);
 
     const blockptr_t initial_block_count = 1 + block_bitmap_length + inode_bitmap_length + inode_table_length;
 
@@ -326,8 +328,9 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     read_inode(inodeptr, &inode);
 
     // check file size limits
-    size_t max_block_offset = int64_div_ceil(offset + length, BLOCK_SIZE);
-    if (max_block_offset >= INODE_MAX_BLOCKS) {
+    const uint64_t new_atom_count = inode.atom_count + length;
+    const blockptr_t new_block_count = DIV_CEIL(new_atom_count, BLOCK_SIZE);
+    if (new_block_count > INODE_MAX_BLOCKS) {
         printf("stzfs_write: max file size exceeded\n");
         return -EFBIG;
     }
@@ -338,16 +341,19 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
         return -EPERM;
     }
 
-    // write first partial block
     size_t written_bytes = 0;
-    blockptr_t initial_offset = offset / BLOCK_SIZE;
-    size_t initial_byte_offset = offset % BLOCK_SIZE;
+
+    // write first partial block
+    const blockptr_t first_blockptr = offset / BLOCK_SIZE;
+    const blockptr_t last_blockptr = new_block_count - 1;
+    const size_t initial_byte_offset = offset % BLOCK_SIZE;
+    blockptr_t blockptr = first_blockptr;
     if (initial_byte_offset > 0) {
         data_block block;
-        if (initial_offset >= inode.block_count) {
+        if (blockptr >= inode.block_count) {
             memset(&block, 0, BLOCK_SIZE);
         } else {
-            read_inode_data_block(&inode, initial_offset, &block);
+            read_inode_data_block(&inode, blockptr, &block);
         }
 
         // keep block boundaries
@@ -355,46 +361,38 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
         if (written_bytes > length) {
             written_bytes = length;
         }
+
         memcpy(&block.data[initial_byte_offset], buffer, written_bytes);
-
-        if (initial_offset >= inode.block_count) {
-            alloc_inode_data_block(&inode, &block);
-        } else {
-            write_inode_data_block(&inode, initial_offset, &block);
-        }
-
-        initial_offset++;
+        write_or_alloc_inode_data_block(&inode, blockptr, &block);
+        blockptr++;
     }
 
-    // write aligned data
-    for (blockptr_t block_offset = initial_offset; block_offset < max_block_offset; block_offset++) {
+    // write aligned full blocks
+    for (; blockptr < new_block_count && ((length - written_bytes) % BLOCK_SIZE) == 0; blockptr++) {
+        void* block = &buffer[written_bytes];
+        write_or_alloc_inode_data_block(&inode, blockptr, block);
+        written_bytes += BLOCK_SIZE;
+    }
+
+    // write final partial block
+    const size_t diff = length - written_bytes;
+    if (diff > 0) {
         data_block block;
-        size_t diff = length - written_bytes;
-        if (diff <= 0) {
-            break;
-        } else if (diff > 0 && diff < BLOCK_SIZE) {
-            if (block_offset < inode.block_count) {
-                read_inode_data_block(&inode, block_offset, &block);
-            } else {
-                memset(&block.data[diff], 0, BLOCK_SIZE - diff);
-            }
 
-            memcpy(&block, &buffer[written_bytes], diff);
-            written_bytes += diff;
+        if (last_blockptr < inode.block_count) {
+            read_inode_data_block(&inode, last_blockptr, &block);
         } else {
-            memcpy(&block, &buffer[written_bytes], BLOCK_SIZE);
-            written_bytes += BLOCK_SIZE;
+            memset(&block.data[diff], 0, BLOCK_SIZE - diff);
         }
 
-        if (block_offset >= inode.block_count) {
-            alloc_inode_data_block(&inode, &block);
-        } else {
-            write_inode_data_block(&inode, block_offset, &block);
-        }
+        memcpy(&block, &buffer[written_bytes], diff);
+        write_or_alloc_inode_data_block(&inode, last_blockptr, &block);
+        written_bytes += diff;
     }
 
-    inode.atom_count += written_bytes;
+    inode.atom_count += length;
     write_inode(inodeptr, &inode);
+
     return written_bytes;
 }
 
@@ -698,7 +696,7 @@ int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
         write_inode(f.inodeptr, &f.inode);
     }
 
-    blockptr_t block_offset = int64_div_ceil(offset, BLOCK_SIZE);
+    blockptr_t block_offset = DIV_CEIL(offset, BLOCK_SIZE);
     if (block_offset < f.inode.block_count) {
         free_inode_data_blocks(&f.inode, block_offset);
         write_inode(f.inodeptr, &f.inode);
@@ -999,6 +997,18 @@ blockptr_t write_inode_data_block(const inode_t* inode, blockptr_t offset, const
 
     write_block(blockptr, block);
     return blockptr;
+}
+
+// write existing or allocate an new inode data block
+int write_or_alloc_inode_data_block(inode_t* inode, blockptr_t blockptr, const void* block) {
+    if (blockptr < inode->block_count) {
+        return write_inode_data_block(inode, blockptr, block);
+    } else if (blockptr == inode->block_count) {
+        return alloc_inode_data_block(inode, block);
+    } else {
+        printf("write_or_alloc_inode_data_block: blockptr out of bounds\n");
+        return -EPERM;
+    }
 }
 
 // replace inodeptr of name in directory
@@ -1429,23 +1439,6 @@ int file_exists(const char* path) {
     } else {
         return 1;
     }
-}
-
-// integer divide a / b and ceil of a % b > 0
-uint32_t uint32_div_ceil(uint32_t a, uint32_t b) {
-    uint32_t result = a / b;
-    if (a % b > 0) {
-        result++;
-    }
-    return result;
-}
-
-int64_t int64_div_ceil(int64_t a, int64_t b) {
-    int64_t result = a / b;
-    if (a % b > 0) {
-        result++;
-    }
-    return result;
 }
 
 // read block from blockptr if not zero or init the block with zeroes
