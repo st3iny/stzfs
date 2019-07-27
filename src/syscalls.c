@@ -369,8 +369,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
 
     // write aligned full blocks
     for (; blockptr < new_block_count && ((length - written_bytes) % BLOCK_SIZE) == 0; blockptr++) {
-        void* block = &buffer[written_bytes];
-        write_or_alloc_inode_data_block(&inode, blockptr, block);
+        write_or_alloc_inode_data_block(&inode, blockptr, &buffer[written_bytes]);
         written_bytes += BLOCK_SIZE;
     }
 
