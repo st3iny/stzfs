@@ -132,7 +132,7 @@ void utils_print_inode(const char* arg) {
     inode_t* inode_data = &inode_table_block.inodes[inodeptr % (BLOCK_SIZE / INODE_SIZE)];
 
     printf("inode@%i = {\n", inodeptr);
-    printf("\tmode = %o\n", inode_data->mode);
+    printf("\tmode = %u\n", inode_data->mode);
     printf("\tuid = %i\n", inode_data->uid);
     printf("\tgid = %i\n", inode_data->gid);
 
@@ -157,9 +157,9 @@ void utils_print_inode(const char* arg) {
     printf("\tblock_count = %i\n", inode_data->block_count);
 
     printf("\tdata_direct = [");
-    for (int i = 0; i < 20; i++) {
-        printf("%i", inode_data->data_direct[i]);
-        if (i < 19) {
+    for (int i = 0; i < INODE_DIRECT_BLOCKS; i++) {
+        printf("%u", inode_data->data_direct[i]);
+        if (i < INODE_DIRECT_BLOCKS - 1) {
             printf(", ");
         }
     }
