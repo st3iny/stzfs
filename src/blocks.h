@@ -1,8 +1,8 @@
 #ifndef FILESYSTEM_BLOCKS_H
 #define FILESYSTEM_BLOCKS_H
 
-#include <bits/types/time_t.h>
 #include <stdint.h>
+#include <time.h>
 
 #include "types.h"
 
@@ -19,10 +19,10 @@ typedef struct super_block {
     inodeptr_t inode_count;
 
     int8_t padding[BLOCK_SIZE - sizeof(blockptr_t) * 8 - sizeof(inodeptr_t) * 2];
-} __attribute__ ((packed)) super_block;
+} super_block;
 
 // blocks each direction/indirection level can hold
-#define INODE_DIRECT_BLOCKS (20)
+#define INODE_DIRECT_BLOCKS (12)
 #define INODE_SINGLE_INDIRECT_BLOCKS (INDIRECT_BLOCK_ENTRIES)
 #define INODE_DOUBLE_INDIRECT_BLOCKS (INDIRECT_BLOCK_ENTRIES * INDIRECT_BLOCK_ENTRIES)
 #define INODE_TRIPLE_INDIRECT_BLOCKS (INODE_DOUBLE_INDIRECT_BLOCKS * INDIRECT_BLOCK_ENTRIES)
@@ -40,8 +40,9 @@ typedef struct inode_t {
     int16_t uid;
     int16_t gid;
     uint16_t link_count;
-    time_t crtime;
-    time_t mtime;
+    struct timespec atime;
+    struct timespec mtime;
+    struct timespec ctime;
     uint64_t atom_count;
     uint32_t block_count;
     blockptr_t data_direct[INODE_DIRECT_BLOCKS];

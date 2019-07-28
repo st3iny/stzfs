@@ -18,6 +18,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
 
 int stzfs_create(const char* file_path, mode_t mode, struct fuse_file_info* file_info);
 int stzfs_rename(const char* src, const char* dst, unsigned int flags);
+int stzfs_link(const char* src, const char* dest);
 int stzfs_unlink(const char* path);
 int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi);
 
@@ -31,6 +32,7 @@ int stzfs_statfs(const char* path, struct statvfs* stat);
 int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file_info);
 int stzfs_chown(const char* path, uid_t uid, gid_t gid, struct fuse_file_info* fi);
 int stzfs_chmod(const char* path, mode_t mode, struct fuse_file_info* fi);
+int stzfs_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info* fi);
 
 extern struct fuse_operations stzfs_ops;
 

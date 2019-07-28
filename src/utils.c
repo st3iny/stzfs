@@ -140,13 +140,17 @@ void utils_print_inode(const char* arg) {
     char pretty_time[100];
     char format_string[] = "%X %d.%m.%Y";
 
-    time_info = localtime(&inode_data->crtime);
+    time_info = localtime(&inode_data->atime.tv_sec);
     strftime(pretty_time, 100, format_string, time_info);
-    printf("\tcrtime = %lu (%s)\n", inode_data->crtime, pretty_time);
+    printf("\tatime = %s\n", pretty_time);
 
-    time_info = localtime(&inode_data->mtime);
+    time_info = localtime(&inode_data->mtime.tv_sec);
     strftime(pretty_time, 100, format_string, time_info);
-    printf("\tmtime = %lu (%s)\n", inode_data->mtime, pretty_time);
+    printf("\tmtime = %s\n", pretty_time);
+
+    time_info = localtime(&inode_data->ctime.tv_sec);
+    strftime(pretty_time, 100, format_string, time_info);
+    printf("\tctime = %s\n", pretty_time);
 
     printf("\tlink_count = %i\n", inode_data->link_count);
     printf("\tatom_count = %lu\n", inode_data->atom_count);

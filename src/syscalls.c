@@ -28,7 +28,9 @@ struct fuse_operations stzfs_ops = {
     .statfs = stzfs_statfs,
     .chown = stzfs_chown,
     .chmod = stzfs_chmod,
-    .truncate = stzfs_truncate
+    .truncate = stzfs_truncate,
+    .utimens = stzfs_utimens,
+    .link = stzfs_link
 };
 
 // structs
@@ -76,6 +78,11 @@ static int write_dir_entry(const inode_t* inode, const char* name, inodeptr_t ta
 // file helpers
 static int file_exists(const char* path);
 
+// update timestamp
+static void touch_atime(inode_t* inode);
+static void touch_mtime_and_ctime(inode_t* inode);
+static void touch_ctime(inode_t* inode);
+
 // misc helpers
 static int read_or_alloc_block(blockptr_t* blockptr, void* block);
 static void memcpy_min(void* dest, const void* src, size_t mult, size_t a, size_t b);
@@ -91,6 +98,9 @@ static mode_t mode_stzfs_to_posix(stzfs_mode_t stzfs_mode);
 
 // integer divide a / b and ceil if a % b > 0 (there is a remainder)
 #define DIV_CEIL(a, b) (((a) / (b)) + (((a) % (b)) != 0))
+
+// return maximum of a and b
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 // init filesystem
 blockptr_t stzfs_makefs(inodeptr_t inode_count) {
@@ -162,15 +172,16 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     printf("stzfs_makefs: wrote root dir block at %i\n", root_dir_block_ptr);
 
     // create root inode
-    time_t now;
-    time(&now);
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
     inode_t root_inode;
     memset(&root_inode, 0, INODE_SIZE);
     root_inode.mode = M_RU | M_WU | M_XU | M_RG | M_XG | M_RO | M_XO | M_DIR;
     root_inode.uid = 0;
     root_inode.gid = 0;
-    root_inode.crtime = now;
+    root_inode.atime = now;
     root_inode.mtime = now;
+    root_inode.ctime = now;
     root_inode.link_count = 1;
     root_inode.atom_count = 1;
     root_inode.block_count = 1;
@@ -229,7 +240,9 @@ int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file
 #if STZFS_MOUNT_AS_USER
     }
 #endif
-    st->st_mtime = f.inode.mtime;
+    st->st_atim = f.inode.atime;
+    st->st_mtim = f.inode.mtime;
+    st->st_ctim = f.inode.ctime;
 
     return 0;
 }
@@ -247,16 +260,26 @@ int stzfs_open(const char* file_path, struct fuse_file_info* file_info) {
     } else if (inode.mode & M_DIR) {
         printf("stzfs_open: is a directory\n");
         return -EISDIR;
-    } else {
-        // open exsiting file
-        file_info->fh = inodeptr;
-        return 0;
     }
+
+    // open exsiting file
+    file_info->fh = inodeptr;
+
+    // update timestamps
+    touch_atime(&inode);
+    write_inode(inodeptr, &inode);
+
+    return 0;
 }
 
 // read from a file
 int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
                struct fuse_file_info* file_info) {
+    if (length == 0)  {
+        printf("stzfs_read: zero length read\n");
+        return 0;
+    }
+
     if (file_info->fh == 0) {
         printf("stzfs_read: invald file handle (inode)\n");
         return -EFAULT;
@@ -276,6 +299,10 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
     if (offset >= inode.atom_count) {
         return 0;
     }
+
+    // update timestamps
+    touch_atime(&inode);
+    write_inode(inodeptr, &inode);
 
     // read first partial block
     size_t read_bytes = 0;
@@ -318,6 +345,11 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
 // write to a file
 int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t offset,
                 struct fuse_file_info* file_info) {
+    if (length == 0)  {
+        printf("stzfs_write: zero length write\n");
+        return 0;
+    }
+
     if (file_info->fh == 0) {
         printf("stzfs_write: invald file handle (inode)\n");
         return -EFAULT;
@@ -328,7 +360,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     read_inode(inodeptr, &inode);
 
     // check file size limits
-    const uint64_t new_atom_count = inode.atom_count + length;
+    const uint64_t new_atom_count = MAX(offset + length, inode.atom_count);
     const blockptr_t new_block_count = DIV_CEIL(new_atom_count, BLOCK_SIZE);
     if (new_block_count > INODE_MAX_BLOCKS) {
         printf("stzfs_write: max file size exceeded\n");
@@ -340,6 +372,10 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
         printf("stzfs_write: offset too high\n");
         return -EPERM;
     }
+
+    // update timestamps
+    touch_atime(&inode);
+    touch_mtime_and_ctime(&inode);
 
     size_t written_bytes = 0;
 
@@ -408,16 +444,20 @@ int stzfs_create(const char* file_path, mode_t mode, struct fuse_file_info* file
         return -EEXIST;
     }
 
+    // update timestamps
+    touch_mtime_and_ctime(&parent_inode);
+
     struct fuse_context* context = fuse_get_context();
 
     // create new file
-    time_t now;
-    time(&now);
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
     inode.mode = mode_posix_to_stzfs(mode);
     inode.uid = context->uid;
     inode.gid = context->gid;
-    inode.crtime = now;
+    inode.atime = now;
     inode.mtime = now;
+    inode.ctime = now;
     inode.link_count = 1;
 
     inodeptr = alloc_inode(&inode);
@@ -456,10 +496,26 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
                           &dst_parent.inode, dst_last_name);
     if (err) return err;
 
+    // update timestamps
+    touch_atime(&src.inode);
+    touch_ctime(&src.inode);
+
+    if (dst_exists) {
+        touch_atime(&dst.inode);
+        touch_ctime(&dst.inode);
+    }
+
+    touch_mtime_and_ctime(&src_parent.inode);
+
+    if (src_parent.inodeptr != dst_parent.inodeptr) {
+        touch_mtime_and_ctime(&dst_parent.inode);
+    }
+
     // TODO: update parent dir pointer if src is a dir
     // TODO: check inode bounds
     // replace dst with src
     src.inode.link_count++;
+    touch_ctime(&src.inode);
     write_inode(src.inodeptr, &src.inode);
 
     if (dst_exists) {
@@ -529,6 +585,9 @@ int stzfs_mkdir(const char* path, mode_t mode) {
         return -ENOSPC;
     }
 
+    // update timestamps
+    touch_mtime_and_ctime(&parent.inode);
+
     // allocate inode in bitmap
     dir.inodeptr = alloc_bitmap("inode", sb.inode_bitmap, sb.inode_bitmap_length);
 
@@ -547,16 +606,17 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     struct fuse_context* context = fuse_get_context();
 
     // create and write inode
-    time_t now;
-    time(&now);
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
     dir.inode.mode = mode_posix_to_stzfs(mode | S_IFDIR);
     dir.inode.uid = context->uid;
     dir.inode.gid = context->gid;
     dir.inode.link_count = 2;
     dir.inode.atom_count = 2;
     dir.inode.block_count = 1;
-    dir.inode.crtime = now;
+    dir.inode.atime = now;
     dir.inode.mtime = now;
+    dir.inode.ctime = now;
     dir.inode.data_direct[0] = blockptr;
     write_inode(dir.inodeptr, &dir.inode);
 
@@ -588,6 +648,10 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
         printf("stzfs_readdir: not a directory\n");
         return -ENOTDIR;
     }
+
+    // update timestamps
+    touch_atime(&dir.inode);
+    write_inode(dir.inodeptr, &dir.inode);
 
     dir_block dir_blocks[dir.inode.block_count];
     read_inode_data_blocks(&dir.inode, dir_blocks);
@@ -642,6 +706,10 @@ int stzfs_chown(const char* path, uid_t uid, gid_t gid, struct fuse_file_info* f
         return -ENOENT;
     }
 
+    // update timestamps
+    touch_atime(&f.inode);
+    touch_ctime(&f.inode);
+
     f.inode.uid = uid;
     f.inode.gid = gid;
     write_inode(f.inodeptr, &f.inode);
@@ -663,6 +731,10 @@ int stzfs_chmod(const char* path, mode_t mode, struct fuse_file_info* fi) {
         printf("stzfs_chmod: no such file\n");
         return -ENOENT;
     }
+
+    // update timestamps
+    touch_atime(&f.inode);
+    touch_ctime(&f.inode);
 
     f.inode.mode = mode_posix_to_stzfs(mode);
     write_inode(f.inodeptr, &f.inode);
@@ -692,14 +764,74 @@ int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
 
     if (offset != f.inode.atom_count) {
         f.inode.atom_count = offset;
-        write_inode(f.inodeptr, &f.inode);
+        touch_mtime_and_ctime(&f.inode);
     }
 
     blockptr_t block_offset = DIV_CEIL(offset, BLOCK_SIZE);
     if (block_offset < f.inode.block_count) {
         free_inode_data_blocks(&f.inode, block_offset);
-        write_inode(f.inodeptr, &f.inode);
     }
+
+    touch_atime(&f.inode);
+    write_inode(f.inodeptr, &f.inode);
+
+    return 0;
+}
+
+// change access and modification times of a file
+int stzfs_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info* fi) {
+    file f;
+    if (fi == NULL) {
+        find_file_inode2(path, &f, NULL, NULL);
+    } else {
+        f.inodeptr = fi->fh;
+        read_inode(f.inodeptr, &f.inode);
+    }
+
+    if (f.inodeptr == 0) {
+        printf("stzfs_utimens: no such file\n");
+        return -ENOENT;
+    }
+
+    f.inode.atime = tv[0];
+    f.inode.mtime = tv[1];
+    touch_ctime(&f.inode);
+    write_inode(f.inodeptr, &f.inode);
+
+    return 0;
+}
+
+// create a hard link to a file
+// TODO: improve me
+int stzfs_link(const char* src, const char* dest) {
+    if (!file_exists(src)) {
+        printf("stzfs_link: no such file\n");
+        return -ENOENT;
+    }
+
+    if (file_exists(dest)) {
+        int err = stzfs_unlink(dest);
+        if (err) return err;
+    }
+
+    file src_file, src_parent;
+    find_file_inode2(src, &src_file, &src_parent, NULL);
+
+    // update timestamps
+    touch_atime(&src_file.inode);
+    touch_ctime(&src_file.inode);
+    touch_mtime_and_ctime(&src_parent.inode);
+
+    // TODO: extract last name more efficiently
+    file dest_file;
+    char dest_last_name[MAX_FILENAME_LENGTH];
+    find_file_inode2(dest, &dest_file, NULL, dest_last_name);
+
+    src_file.inode.link_count++;
+    write_inode(src_file.inodeptr, &src_file.inode);
+
+    alloc_dir_entry(&src_parent.inode, dest_last_name, src_file.inodeptr);
+    write_inode(src_parent.inodeptr, &src_parent.inode);
 
     return 0;
 }
@@ -1476,14 +1608,24 @@ int unlink_file_or_dir(const char* path, int allow_dir) {
         return -ENOTEMPTY;
     }
 
+    // update timestamps
+    touch_atime(&f.inode);
+    touch_ctime(&f.inode);
+    touch_mtime_and_ctime(&parent.inode);
+
     if ((f.inode.mode & M_DIR)) {
         parent.inode.link_count--;
     }
 
-    f.inode.link_count--;
     free_dir_entry(&parent.inode, name);
     write_inode(parent.inodeptr, &parent.inode);
-    free_inode(f.inodeptr, &f.inode);
+
+    f.inode.link_count--;
+    if (f.inode.link_count == 0) {
+        free_inode(f.inodeptr, &f.inode);
+    } else {
+        write_inode(f.inodeptr, &f.inode);
+    }
 
     return 0;
 }
@@ -1547,4 +1689,22 @@ mode_t mode_stzfs_to_posix(stzfs_mode_t stzfs_mode) {
     if (stzfs_mode & M_STICKY) mode |= S_ISVTX;
 
     return mode;
+}
+
+// update inode atime
+void touch_atime(inode_t* inode) {
+    clock_gettime(CLOCK_REALTIME, &inode->atime);
+}
+
+// update inode mtime and ctime
+void touch_mtime_and_ctime(inode_t* inode) {
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    inode->mtime = now;
+    inode->ctime = now;
+}
+
+// update inode ctime
+void touch_ctime(inode_t* inode) {
+    clock_gettime(CLOCK_REALTIME, &inode->ctime);
 }
