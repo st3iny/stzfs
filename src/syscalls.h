@@ -21,6 +21,8 @@ int stzfs_rename(const char* src, const char* dst, unsigned int flags);
 int stzfs_link(const char* src, const char* dest);
 int stzfs_unlink(const char* path);
 int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi);
+int stzfs_symlink(const char* target, const char* link_name);
+int stzfs_readlink(const char* path, char* buffer, size_t length);
 
 int stzfs_mkdir(const char* path, mode_t mode);
 int stzfs_rmdir(const char* path);

@@ -30,7 +30,9 @@ struct fuse_operations stzfs_ops = {
     .chmod = stzfs_chmod,
     .truncate = stzfs_truncate,
     .utimens = stzfs_utimens,
-    .link = stzfs_link
+    .link = stzfs_link,
+    .symlink = stzfs_symlink,
+    .readlink = stzfs_readlink
 };
 
 // structs
@@ -98,6 +100,9 @@ static mode_t mode_stzfs_to_posix(stzfs_mode_t stzfs_mode);
 
 // integer divide a / b and ceil if a % b > 0 (there is a remainder)
 #define DIV_CEIL(a, b) (((a) / (b)) + (((a) % (b)) != 0))
+
+// return minimum of a and b
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 // return maximum of a and b
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -810,28 +815,103 @@ int stzfs_link(const char* src, const char* dest) {
     }
 
     if (file_exists(dest)) {
-        int err = stzfs_unlink(dest);
-        if (err) return err;
+        printf("stzfs_link: dest already existing\n");
+        return -EEXIST;
     }
 
-    file src_file, src_parent;
-    find_file_inode2(src, &src_file, &src_parent, NULL);
+    file src_file;
+    find_file_inode2(src, &src_file, NULL, NULL);
+
+    file dest_file, dest_parent;
+    char dest_last_name[MAX_FILENAME_LENGTH];
+    find_file_inode2(dest, &dest_file, &dest_parent, dest_last_name);
 
     // update timestamps
     touch_atime(&src_file.inode);
     touch_ctime(&src_file.inode);
-    touch_mtime_and_ctime(&src_parent.inode);
-
-    // TODO: extract last name more efficiently
-    file dest_file;
-    char dest_last_name[MAX_FILENAME_LENGTH];
-    find_file_inode2(dest, &dest_file, NULL, dest_last_name);
+    touch_mtime_and_ctime(&dest_parent.inode);
 
     src_file.inode.link_count++;
     write_inode(src_file.inodeptr, &src_file.inode);
 
-    alloc_dir_entry(&src_parent.inode, dest_last_name, src_file.inodeptr);
-    write_inode(src_parent.inodeptr, &src_parent.inode);
+    alloc_dir_entry(&dest_parent.inode, dest_last_name, src_file.inodeptr);
+    write_inode(dest_parent.inodeptr, &dest_parent.inode);
+
+    return 0;
+}
+
+// create symbolic link
+int stzfs_symlink(const char* target, const char* link_name) {
+    if (file_exists(link_name)) {
+        printf("stzfs_symlink: link name already existing\n");
+        return -EEXIST;
+    }
+
+    file symlink, symlink_parent;
+    char symlink_last_name[MAX_FILENAME_LENGTH];
+    find_file_inode2(link_name, &symlink, &symlink_parent, symlink_last_name);
+
+    // update timestamps
+    touch_mtime_and_ctime(&symlink_parent.inode);
+
+    // create new file
+    struct fuse_context* context = fuse_get_context();
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+
+    symlink.inode.mode = M_LNK;
+    symlink.inode.uid = context->uid;
+    symlink.inode.gid = context->gid;
+    symlink.inode.atime = now;
+    symlink.inode.mtime = now;
+    symlink.inode.ctime = now;
+    symlink.inode.link_count = 1;
+
+    symlink.inodeptr = alloc_inode(&symlink.inode);
+    alloc_dir_entry(&symlink_parent.inode, symlink_last_name, symlink.inodeptr);
+    write_inode(symlink_parent.inodeptr, &symlink_parent.inode);
+
+    // write target to symbolic link data blocks
+    const size_t target_length = strlen(target);
+    const size_t buffer_length = DIV_CEIL(sizeof(char) * target_length, BLOCK_SIZE) * BLOCK_SIZE;
+    void* buffer = malloc(buffer_length);
+    memcpy(buffer, target, target_length);
+    memset(buffer + target_length, 0, buffer_length - target_length);
+
+    for (size_t offset = 0; offset < buffer_length; offset += BLOCK_SIZE) {
+        alloc_inode_data_block(&symlink.inode, buffer + offset);
+    }
+    symlink.inode.atom_count = target_length;
+    write_inode(symlink.inodeptr, &symlink.inode);
+    free(buffer);
+
+    return 0;
+}
+
+// read symbolic link target
+int stzfs_readlink(const char* path, char* buffer, size_t length) {
+    if (!file_exists(path)) {
+        printf("stzfs_readlink: no such file\n");
+        return -ENOENT;
+    }
+
+    file symlink;
+    find_file_inode2(path, &symlink, NULL, NULL);
+
+    if (!M_IS_LNK(symlink.inode.mode)) {
+        printf("stzfs_readlink: not a symbolic link\n");
+        return -EINVAL;
+    }
+
+    touch_atime(&symlink.inode);
+    write_inode(symlink.inodeptr, &symlink.inode);
+
+    data_block data_blocks[symlink.inode.block_count];
+    read_inode_data_blocks(&symlink.inode, data_blocks);
+
+    const size_t data_length = MIN(length - 1, symlink.inode.atom_count);
+    memcpy(buffer, data_blocks, data_length);
+    buffer[data_length] = '\0';
 
     return 0;
 }
@@ -1635,7 +1715,10 @@ stzfs_mode_t mode_posix_to_stzfs(mode_t mode) {
     stzfs_mode_t stzfs_mode = 0;
 
     // file type
-    if (mode & S_IFDIR) stzfs_mode |= M_DIR;
+    if      (S_ISREG(mode)) stzfs_mode |= M_REG;
+    else if (S_ISLNK(mode)) stzfs_mode |= M_LNK;
+    else if (S_ISDIR(mode)) stzfs_mode |= M_DIR;
+    else    printf("mode_posix_to_stzfs: invalid file type\n");
 
     // user permissions
     if (mode & S_IRUSR) stzfs_mode |= M_RU;
@@ -1665,8 +1748,10 @@ mode_t mode_stzfs_to_posix(stzfs_mode_t stzfs_mode) {
     mode_t mode = 0;
 
     // file type
-    if (stzfs_mode & M_DIR) mode |= S_IFDIR;
-    else                    mode |= S_IFREG;
+    if      (M_IS_REG(stzfs_mode)) mode |= S_IFREG;
+    else if (M_IS_LNK(stzfs_mode)) mode |= S_IFLNK;
+    else if (M_IS_DIR(stzfs_mode)) mode |= S_IFDIR;
+    else    printf("mode_stzfs_to_posix: invalid file type\n");
 
     // user permissions
     if (stzfs_mode & M_RU) mode |= S_IRUSR;
