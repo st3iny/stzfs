@@ -8,19 +8,17 @@
 
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 3) {
-        printf("usage: mkfs.stzfs <device> [inode_count]\n");
+        printf("usage: mkfs.stzfs <device> [bytes_per_inode]\n");
         return 1;
     }
 
     off_t size = vm_config_set_file(argv[1]);
 
-    inodeptr_t inode_count;
+    long int bytes_per_inode = 16384;
     if (argc == 3) {
-        inode_count = strtol(argv[2], NULL, 10);
-    } else {
-        inode_count = (size / sizeof(inode_t)) / 8;
+        bytes_per_inode = strtol(argv[2], NULL, 10);
     }
-    stzfs_makefs(inode_count);
+    stzfs_makefs(size / bytes_per_inode);
 
     return 0;
 }
