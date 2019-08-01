@@ -1,9 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/types.h>
 
-#include "blocks.h"
-#include "syscalls.h"
-#include "types.h"
+#include "stzfs.h"
 #include "vm.h"
 
 int main(int argc, char** argv) {

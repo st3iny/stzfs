@@ -4,7 +4,7 @@
 #include <unistd.h>
 
 #include "fuse.h"
-#include "syscalls.h"
+#include "stzfs.h"
 #include "types.h"
 #include "vm.h"
 

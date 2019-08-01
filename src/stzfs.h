@@ -1,5 +1,11 @@
-#ifndef FILESYSTEM_SYSCALLS_H
-#define FILESYSTEM_SYSCALLS_H
+#ifndef STZFS_STZFS_H
+#define STZFS_STZFS_H
+
+#include <stddef.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "fuse.h"
 #include "types.h"
@@ -38,4 +44,4 @@ int stzfs_utimens(const char* path, const struct timespec tv[2], struct fuse_fil
 
 extern struct fuse_operations stzfs_ops;
 
-#endif // FILESYSTEM_SYSCALLS_H
+#endif // STZFS_STZFS_H

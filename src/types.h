@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+// defs
 #define EOF (-1)
 #define BLOCK_SIZE (4096) // 4 KiB
 #define MAX_FILENAME_LENGTH (256 - sizeof(inodeptr_t)) // 251 characters
@@ -32,6 +33,7 @@
 #define M_IS_LNK(mode) (((mode) & M_TYPE_MASK) == M_LNK)
 #define M_IS_DIR(mode) (((mode) & M_TYPE_MASK) == M_DIR)
 
+// types
 typedef int8_t   filename_t;
 typedef int16_t  stzfs_mode_t;
 typedef uint32_t inodeptr_t;

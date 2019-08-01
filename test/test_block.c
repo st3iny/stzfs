@@ -4,6 +4,7 @@
 #include <cmocka.h>
 
 #include "../src/blocks.h"
+#include "../src/inode.h"
 
 void test_block_sizes(void** state);
 void test_block_entry_sizes(void** state);

@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <sys/types.h>
 
 #define VM_HDD_PATH "/tmp/vm-hdd.dat"
 
