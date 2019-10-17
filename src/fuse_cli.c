@@ -6,7 +6,7 @@
 #include "vm.h"
 
 void print_usage(void) {
-    printf("usage: stzfs <device> <dir>\n");
+    printf("usage: stzfs <disk> <mountpoint> [options]\n");
 }
 
 int main(int argc, char** argv) {
@@ -16,28 +16,19 @@ int main(int argc, char** argv) {
     }
 
     // extract device
-    char* device = NULL;
+    char* disk = argv[1];
     char** argv_new = (char**)malloc(argc * sizeof(char**));
     argv_new[0] = argv[0];
-    int index = 1;
-    for (int i = 1; i < argc; i++) {
-        if (argv[i][0] != '-' && device == NULL) {
-            device = argv[i];
-            continue;
-        }
-        argv_new[index] = argv[i];
-        index++;
-    }
-
-    if (device == NULL) {
-        print_usage();
-        return 0;
+    for (int i = 2; i < argc; i++) {
+        argv_new[i - 1] = argv[i];
     }
 
     // run fuse
-    printf("mounting %s\n", device);
-    vm_config_set_file(device);
-    struct fuse_args args = FUSE_ARGS_INIT(index, argv_new);
+    printf("mounting %s at %s\n", disk, argv[2]);
+    vm_config_set_file(disk);
+    struct fuse_args args = FUSE_ARGS_INIT(argc - 1, argv_new);
+    fuse_opt_parse(&args, NULL, NULL, NULL);
+    fuse_opt_add_arg(&args, "-s");
     int ret = fuse_main(args.argc, args.argv, &stzfs_ops, NULL);
 
     // cleanup fuse
