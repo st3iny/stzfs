@@ -7,6 +7,8 @@
 #include <unistd.h>
 
 #include "blocks.h"
+#include "read.h"
+#include "types.h"
 #include "utils.h"
 #include "vm.h"
 
@@ -183,7 +185,7 @@ void utils_print_block_range(blockptr_t offset, blockptr_t length) {
 
 bool utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap, blockptr_t block_bitmap_length) {
     blockptr_t bitmap_block_offset = ptr / (BLOCK_SIZE * 8);
-    blockptr_t inner_offset = ptr % (BLOCK_SIZE * 8);
+    blockptr_t inner_offset = (ptr / (sizeof(bitmap_entry_t) * 8)) % BITMAP_BLOCK_ENTRIES;
 
     if (bitmap_block_offset >= block_bitmap_length) {
         fprintf(stderr, "out of bounds while trying to check bitmap allocation at %i\n", bitmap_block_offset);
@@ -192,11 +194,11 @@ bool utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap, blockptr_t 
 
     // extract bitmap allocation status for given block or inode
     bitmap_block ba;
-    vm_read((block_bitmap + bitmap_block_offset) * BLOCK_SIZE, &ba, BLOCK_SIZE);
-    int status = ((*(int*)((void*)&ba + inner_offset / 8)) & 0xff) >> (inner_offset % 8);
+    read_block(block_bitmap + bitmap_block_offset, &ba);
+    bitmap_entry_t entry = ba.bitmap[inner_offset];
 
     // mask status as only the least significant bit matters
-    return status & 1;
+    return (entry >> (ptr % (sizeof(bitmap_entry_t) * 8))) & 1;
 }
 
 void utils_print_allocation_status(const char* title, blockptr_t alloc_start, blockptr_t alloc_end, blockptr_t bitmap_offset, blockptr_t bitmap_length) {
@@ -209,8 +211,6 @@ void utils_print_allocation_status(const char* title, blockptr_t alloc_start, bl
         bool allocated;
         if (i == alloc_end) {
             allocated = false;
-            end = i - 1;
-            end_set = true;
         } else {
             allocated = utils_bitmap_allocated(i, bitmap_offset, bitmap_length);
         }
@@ -219,7 +219,7 @@ void utils_print_allocation_status(const char* title, blockptr_t alloc_start, bl
             begin = i;
             begin_set = true;
         } else if (begin_set && !allocated) {
-            end = i;
+            end = i - 1;
             end_set = true;
         }
 

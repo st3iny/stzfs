@@ -4,7 +4,7 @@ target_link_libraries(filesystem fuse3)
 add_executable(stzfs fuse_cli.c stzfs.c vm.c read.c write.c find.c alloc.c free.c helpers.c)
 target_link_libraries(stzfs fuse3)
 
-add_executable(utils utils.c vm.c)
+add_executable(utils utils.c vm.c read.c find.c)
 target_link_libraries(utils fuse3)
 
 add_executable(mkfs.stzfs mkfs.c stzfs.c vm.c read.c write.c find.c alloc.c free.c helpers.c)
