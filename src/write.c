@@ -6,6 +6,7 @@
 #include "alloc.h"
 #include "blocks.h"
 #include "find.h"
+#include "helpers.h"
 #include "vm.h"
 #include "read.h"
 #include "write.h"
@@ -70,16 +71,21 @@ int write_dir_entry(const inode_t* inode, const char* name, inodeptr_t target_in
         return -ENOTDIR;
     }
 
-    dir_block dir_blocks[inode->block_count];
-    read_inode_data_blocks(inode, dir_blocks);
-
     // search and replace name in directory
     for (blockptr_t offset = 0; offset < inode->block_count; offset++) {
-        for (size_t entry = 0; entry < DIR_BLOCK_ENTRIES; entry++) {
-            dir_block_entry* entry_data = &dir_blocks[offset].entries[entry];
-            if (strcmp(entry_data->name, name) == 0) {
-                entry_data->inode = target_inodeptr;
-                write_inode_data_block(inode, offset, &dir_blocks[offset]);
+        dir_block block;
+        const blockptr_t blockptr = read_inode_data_block(inode, offset, &block);
+        if (blockptr == 0) {
+            printf("write_dir_entry: can't read directory block\n");
+            return -EFAULT;
+        }
+
+        const size_t remaining_entries = inode->atom_count - offset * DIR_BLOCK_ENTRIES;
+        const size_t entries = MIN(DIR_BLOCK_ENTRIES, remaining_entries);
+        for (size_t entry = 0; entry < entries; entry++) {
+            if (strcmp((const char*)block.entries[entry].name, name) == 0) {
+                block.entries[entry].inode = target_inodeptr;
+                write_inode_data_block(inode, offset, &block);
                 return 0;
             }
         }

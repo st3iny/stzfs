@@ -5,6 +5,7 @@
 
 #include "blocks.h"
 #include "free.h"
+#include "helpers.h"
 #include "read.h"
 #include "write.h"
 
@@ -169,18 +170,23 @@ int free_dir_entry(inode_t* inode, const char* name) {
         return -EPERM;
     }
 
-    dir_block dir_blocks[inode->block_count];
-    read_inode_data_blocks(inode, dir_blocks);
-
     // search name in directory
     int entry_found = 0;
     size_t free_entry;
     blockptr_t free_entry_offset;
+    dir_block free_entry_block;
     for (blockptr_t offset = 0; offset < inode->block_count && !entry_found; offset++) {
-        for (size_t entry = 0; entry < DIR_BLOCK_ENTRIES; entry++) {
-            if (offset * DIR_BLOCK_ENTRIES + entry >= inode->atom_count) break;
+        const blockptr_t blockptr = read_inode_data_block(inode, offset, &free_entry_block);
+        if (blockptr == 0) {
+            printf("free_dir_entry: can't read directory block\n");
+            return -EFAULT;
+        }
 
-            if (strcmp(dir_blocks[offset].entries[entry].name, name) == 0) {
+        // search current directory block
+        const size_t remaining_entries = inode->atom_count - offset * DIR_BLOCK_ENTRIES;
+        const size_t entries = MIN(DIR_BLOCK_ENTRIES, remaining_entries);
+        for (size_t entry = 0; entry < entries; entry++) {
+            if (strcmp((const char*)free_entry_block.entries[entry].name, name) == 0) {
                 free_entry = entry;
                 free_entry_offset = offset;
                 entry_found = 1;
@@ -195,14 +201,25 @@ int free_dir_entry(inode_t* inode, const char* name) {
     }
 
     // get last entry offsets
-    size_t last_entry = (inode->atom_count - 1) % DIR_BLOCK_ENTRIES;
-    blockptr_t last_entry_offset = inode->block_count - 1;
+    const size_t last_entry = (inode->atom_count - 1) % DIR_BLOCK_ENTRIES;
+    const blockptr_t last_entry_offset = inode->block_count - 1;
 
     // copy last entry to removed entry if they are not the same
     if (free_entry != last_entry || free_entry_offset != last_entry_offset) {
-        dir_block* free_block = &dir_blocks[free_entry_offset];
-        free_block->entries[free_entry] = dir_blocks[last_entry_offset].entries[last_entry];
-        write_inode_data_block(inode, free_entry_offset, free_block);
+        dir_block_entry entry;
+        if (free_entry_offset == last_entry_offset) {
+            entry = free_entry_block.entries[last_entry];
+        } else {
+            dir_block last_block;
+            if (read_inode_data_block(inode, last_entry_offset, &last_block) == 0) {
+                printf("free_dir_entry: can't read directory block\n");
+                return -EFAULT;
+            }
+            entry = last_block.entries[last_entry];
+        }
+
+        free_entry_block.entries[free_entry] = entry;
+        write_inode_data_block(inode, free_entry_offset, &free_entry_block);
     }
 
     if (last_entry == 0) {

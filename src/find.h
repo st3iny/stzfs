@@ -10,6 +10,7 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
 int find_file_inode2(const char* file_path, file* f, file* parent, char* last_name);
 int find_name(const char* name, const inode_t* inode, inodeptr_t* found_inodeptr);
 blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset);
-int find_inode_data_blockptrs(const inode_t* inode, blockptr_t* blockptrs);
+int find_inode_data_blockptrs(const inode_t* inode, blockptr_t* blockptrs, blockptr_t length,
+                              blockptr_t offset);
 
 #endif // STZFS_FIND_H

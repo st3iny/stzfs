@@ -600,9 +600,6 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
     touch_atime(&dir.inode);
     write_inode(dir.inodeptr, &dir.inode);
 
-    dir_block dir_blocks[dir.inode.block_count];
-    read_inode_data_blocks(&dir.inode, dir_blocks);
-
 #if STZFS_SHOW_DOUBLE_DOTS_IN_ROOT_DIR
     if (strcmp(path, "/") == 0) {
         filler(buffer, "..", NULL, 0, 0);
@@ -610,11 +607,17 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
 #endif
 
     for (blockptr_t offset = 0; offset < dir.inode.block_count; offset++) {
-        for (size_t entry = 0; entry < DIR_BLOCK_ENTRIES; entry++) {
-            if (entry + offset * DIR_BLOCK_ENTRIES >= dir.inode.atom_count) return 0;
+        dir_block block;
+        const blockptr_t blockptr = read_inode_data_block(&dir.inode, offset, &block);
+        if (blockptr == 0) {
+            printf("stzfs_readdir: can't read directory block\n");
+            return -EFAULT;
+        }
 
-            dir_block_entry* entry_data = &dir_blocks[offset].entries[entry];
-            filler(buffer, entry_data->name, NULL, 0, 0);
+        const size_t remaining_entries = dir.inode.atom_count - offset * DIR_BLOCK_ENTRIES;
+        const size_t entries = MIN(DIR_BLOCK_ENTRIES, remaining_entries);
+        for (size_t entry = 0; entry < entries; entry++) {
+            filler(buffer, (const char*)block.entries[entry].name, NULL, 0, 0);
         }
     }
 
@@ -849,7 +852,7 @@ int stzfs_readlink(const char* path, char* buffer, size_t length) {
     write_inode(symlink.inodeptr, &symlink.inode);
 
     data_block data_blocks[symlink.inode.block_count];
-    read_inode_data_blocks(&symlink.inode, data_blocks);
+    read_inode_data_blocks(&symlink.inode, data_blocks, symlink.inode.block_count, 0);
 
     const size_t data_length = MIN(length - 1, symlink.inode.atom_count);
     memcpy(buffer, data_blocks, data_length);

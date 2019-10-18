@@ -13,6 +13,13 @@ void read_block(blockptr_t blockptr, void* block) {
     vm_read(blockptr * BLOCK_SIZE, block, BLOCK_SIZE);
 }
 
+// read blocks from disk
+void read_blocks(const blockptr_t* blockptrs, void* blocks, blockptr_t length) {
+    for (size_t i = 0; i < length; i++) {
+        read_block(blockptrs[i], blocks + i * BLOCK_SIZE);
+    }
+}
+
 // read block from blockptr if not zero or init the block with zeroes
 int read_or_alloc_block(blockptr_t* blockptr, void* block) {
     if (*blockptr) {
@@ -57,15 +64,14 @@ blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* 
     return blockptr;
 }
 
-// read all data blocks of an inode
-int read_inode_data_blocks(const inode_t* inode, void* data_block_array) {
-    blockptr_t blockptrs[inode->block_count];
-    int err = find_inode_data_blockptrs(inode, blockptrs);
+// read data blocks of an inode and store them to a buffer
+int read_inode_data_blocks(const inode_t* inode, void* data_block_array, blockptr_t length,
+                           blockptr_t offset) {
+    blockptr_t blockptrs[length];
+    int err = find_inode_data_blockptrs(inode, blockptrs, length, offset);
     if (err) return err;
 
-    for (size_t offset = 0; offset < inode->block_count; offset++) {
-        read_block(blockptrs[offset], &((data_block*)data_block_array)[offset]);
-    }
+    read_blocks(blockptrs, data_block_array, length);
 
     return 0;
 }

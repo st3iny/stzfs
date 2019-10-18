@@ -88,22 +88,27 @@ int find_name(const char* name, const inode_t* inode, inodeptr_t* found_inodeptr
     }
 
     // read directory blocks and search them
-    uint64_t absolute_entry = 0;
-    dir_block dir_blocks[inode->block_count];
-    read_inode_data_blocks(inode, &dir_blocks);
-    for (int dir_block_index = 0; dir_block_index < inode->block_count; dir_block_index++) {
-        const dir_block* cur_dir_block = &dir_blocks[dir_block_index];
-        for (int entry = 0; entry < DIR_BLOCK_ENTRIES && absolute_entry < inode->atom_count; entry++) {
-            if (strcmp((const char*)&cur_dir_block->entries[entry].name, name) == 0) {
+    for (blockptr_t offset = 0; offset < inode->block_count; offset++) {
+        dir_block block;
+        const blockptr_t blockptr = read_inode_data_block(inode, offset, &block);
+        if (blockptr == 0) {
+            printf("find_name: can't read directory block\n");
+            return -EFAULT;
+        }
+
+        const size_t remaining_entries = inode->atom_count - offset * DIR_BLOCK_ENTRIES;
+        const size_t entries = MIN(DIR_BLOCK_ENTRIES, remaining_entries);
+        for (size_t entry = 0; entry < entries; entry++) {
+            if (strcmp((const char*)block.entries[entry].name, name) == 0) {
                 // found name in directory
-                *found_inodeptr = cur_dir_block->entries[entry].inode;
+                *found_inodeptr = block.entries[entry].inode;
                 return 0;
             }
-            absolute_entry++;
         }
     }
 
     // file not found in directory
+    // printf("find_name: file not found in directory\n");
     *found_inodeptr = 0;
     return 0;
 }
@@ -114,7 +119,7 @@ blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset) {
         printf("find_inode_data_blockptr: relative data block offset out of bounds\n");
         return 0;
     } else if (offset >= INODE_MAX_BLOCKS) {
-        printf("find_inode_data_blockptr: inode has too many data blocks\n");
+        printf("find_inode_data_blockptr: relative data block offset out of absolute bounds\n");
         return 0;
     }
 
@@ -150,62 +155,24 @@ blockptr_t find_inode_data_blockptr(const inode_t* inode, blockptr_t offset) {
     return absolute_blockptr;
 }
 
-// find all inode blockptrs and store them in the given array
-int find_inode_data_blockptrs(const inode_t* inode, blockptr_t* blockptrs) {
-    const int size = sizeof(blockptr_t);
-    long long blocks_left = inode->block_count;
-    blockptr_t offset = 0;
-
-    typedef struct level {
-        blockptr_t blockptr;
-        indirect_block block;
-    } level;
-
-    if (blocks_left <= 0) return 0;
-
-    // direct
-    memcpy_min(blockptrs, inode->data_direct, size, blocks_left, INODE_DIRECT_BLOCKS);
-    blocks_left -= INODE_DIRECT_BLOCKS;
-    offset += INODE_DIRECT_BLOCKS;
-    if (blocks_left <= 0) return 0;
-
-    // single indirect
-    indirect_block level1;
-    read_block(inode->data_single_indirect, &level1);
-    memcpy_min(&blockptrs[offset], &level1, size, blocks_left, INDIRECT_BLOCK_ENTRIES);
-    blocks_left -= INODE_SINGLE_INDIRECT_BLOCKS;
-    offset += INODE_SINGLE_INDIRECT_BLOCKS;
-    if (blocks_left <= 0) return 0;
-
-    // double indirect
-    read_block(inode->data_double_indirect, &level1);
-
-    for (blockptr_t level1_offset = 0; level1_offset < INDIRECT_BLOCK_ENTRIES; level1_offset++) {
-        level level2 = {.blockptr = level1.blocks[level1_offset]};
-        read_block(level2.blockptr, &level2.block);
-        memcpy_min(&blockptrs[offset], &level2.block, size, blocks_left, INDIRECT_BLOCK_ENTRIES);
-        blocks_left -= INDIRECT_BLOCK_ENTRIES;
-        offset += INDIRECT_BLOCK_ENTRIES;
-        if (blocks_left <= 0) return 0;
+// find inode blockptrs and store them in the given buffer
+int find_inode_data_blockptrs(const inode_t* inode, blockptr_t* blockptrs, blockptr_t length,
+                              blockptr_t offset) {
+    if (offset + length >= inode->block_count) {
+        printf("find_inode_data_blockptrs: relative data block offset out of range\n");
+        return -EFAULT;
     }
 
-    // triple indirect
-    read_block(inode->data_triple_indirect, &level1);
+    const int size = sizeof(blockptr_t);
+    long long blocks_left = length;
 
-    for (blockptr_t level1_offset = 0; level1_offset < INDIRECT_BLOCK_ENTRIES; level1_offset++) {
-        level level2 = {.blockptr = level1.blocks[level1_offset]};
-        read_block(level2.blockptr, &level2.block);
-
-        blockptr_t level2_offset;
-        for (level2_offset = 0; level2_offset < INDIRECT_BLOCK_ENTRIES; level2_offset++) {
-            level level3 = {.blockptr = level2.block.blocks[level2_offset]};
-            read_block(level3.blockptr, &level3.block);
-            memcpy_min(&blockptrs[offset], &level3.block, size, blocks_left,
-                       INDIRECT_BLOCK_ENTRIES);
-            blocks_left -= INDIRECT_BLOCK_ENTRIES;
-            offset += INDIRECT_BLOCK_ENTRIES;
-            if (blocks_left <= 0) return 0;
+    for (blockptr_t i = offset; i < offset + length; i++) {
+        const blockptr_t blockptr = find_inode_data_blockptr(inode, i);
+        if (blockptr == 0) {
+            printf("find_inode_data_blockptrs: invalid blockptr returned\n");
+            return -EFAULT;
         }
+        blockptrs[i] = blockptr;
     }
 
     return 0;

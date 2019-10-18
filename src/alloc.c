@@ -59,7 +59,7 @@ blockptr_t alloc_block(const void* new_block) {
     // get next free block and write data block
     blockptr_t next_free_block = alloc_bitmap("block", sb.block_bitmap, sb.block_bitmap_length);
     if (next_free_block == 0) {
-        printf("alloc_block: could not allocate block");
+        printf("alloc_block: could not allocate block\n");
         return -ENOSPC;
     }
     write_block(next_free_block, new_block);
