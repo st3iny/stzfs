@@ -45,8 +45,10 @@ typedef struct indirect_block {
     blockptr_t blocks[INDIRECT_BLOCK_ENTRIES];
 } indirect_block;
 
+#define BITMAP_BLOCK_ENTRIES (BLOCK_SIZE / sizeof(bitmap_entry_t))
+
 typedef struct bitmap_block {
-    uint64_t bitmap[BLOCK_SIZE / 8];
+    bitmap_entry_t bitmap[BITMAP_BLOCK_ENTRIES];
 } bitmap_block;
 
 typedef struct data_block {

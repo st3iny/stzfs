@@ -38,5 +38,6 @@ typedef int8_t   filename_t;
 typedef int16_t  stzfs_mode_t;
 typedef uint32_t inodeptr_t;
 typedef uint32_t blockptr_t;
+typedef uint64_t bitmap_entry_t;
 
 #endif // FILESYSTEM_TYPES_H

@@ -18,24 +18,25 @@ blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t 
     while (next_free == 0 && current_bitmap_block < bitmap_offset + bitmap_length) {
         read_block(current_bitmap_block, &ba);
 
-        for (int i = 0; i < BLOCK_SIZE; i++) {
-            int* ba_entry = (int*)((void*)&ba + i);
-            int data = *ba_entry & 0xff;
-            if (data == 0xff) {
+        for (int i = 0; i < BITMAP_BLOCK_ENTRIES; i++) {
+            bitmap_entry_t data = ba.bitmap[i];
+            if (~data == 0) {
                 continue;
             }
 
             // there is at least one free alloc available
             int offset = 0;
-            while (offset < 8 && (data & 1) != 0) {
+            while (offset < sizeof(bitmap_entry_t) * 8 && (data & 1) != 0) {
                 data >>= 1;
                 offset++;
             }
 
             // mark alloc in bitmap
-            // ba.bitmap[i] |= 1 << offset;
-            *ba_entry = (*ba_entry & 0xff) | (1 << offset);
-            next_free = (current_bitmap_block - bitmap_offset) * BLOCK_SIZE * 8 + i * 8 + offset;
+            bitmap_entry_t new_entry = 1;
+            ba.bitmap[i] |= new_entry << offset;
+            next_free = (current_bitmap_block - bitmap_offset) * BLOCK_SIZE * 8
+                        + i * sizeof(bitmap_entry_t) * 8
+                        + offset;
             break;
         }
 
