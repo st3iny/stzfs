@@ -13,7 +13,7 @@
 // TODO: improve me
 int free_blocks(const blockptr_t* blockptrs, size_t length) {
     super_block sb;
-    read_block(0, &sb);
+    read_super_block(&sb);
 
     for (size_t offset = 0; offset < length; offset++) {
         int err = free_bitmap(blockptrs[offset], sb.block_bitmap, sb.block_bitmap_length);
@@ -22,7 +22,7 @@ int free_blocks(const blockptr_t* blockptrs, size_t length) {
 
     // update superblock
     sb.free_blocks += length;
-    write_block(0, &sb);
+    write_super_block(&sb);
 
     return 0;
 }
@@ -44,7 +44,7 @@ int free_inode(inodeptr_t inodeptr, inode_t* inode) {
     }
 
     super_block sb;
-    read_block(0, &sb);
+    read_super_block(&sb);
 
     // dealloc inode first
     free_bitmap(inodeptr, sb.inode_bitmap, sb.inode_bitmap_length);

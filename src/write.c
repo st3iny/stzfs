@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "alloc.h"
-#include "blocks.h"
 #include "find.h"
 #include "helpers.h"
 #include "vm.h"
@@ -13,7 +12,12 @@
 
 // write block to disk
 void write_block(blockptr_t blockptr, const void* block) {
-    vm_write(blockptr * BLOCK_SIZE, block, BLOCK_SIZE);
+    vm_write((off_t)blockptr * BLOCK_SIZE, block, BLOCK_SIZE);
+}
+
+// write super block to disk
+void write_super_block(const super_block* block) {
+    vm_write(SUPER_BLOCKPTR * BLOCK_SIZE, block, BLOCK_SIZE);
 }
 
 // write inode to disk
@@ -24,7 +28,7 @@ void write_inode(inodeptr_t inodeptr, const inode_t* inode) {
     }
 
     super_block sb;
-    read_block(0, &sb);
+    read_super_block(&sb);
 
     blockptr_t table_block_offset = inodeptr / INODE_BLOCK_ENTRIES;
     if (table_block_offset > sb.inode_table_length) {

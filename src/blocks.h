@@ -6,6 +6,8 @@
 #include "types.h"
 #include "inode.h"
 
+#define SUPER_BLOCKPTR (0)
+
 typedef struct super_block {
     blockptr_t block_count;
     blockptr_t free_blocks;

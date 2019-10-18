@@ -13,7 +13,7 @@
 int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
                     inodeptr_t* parent_inodeptr, inode_t* parent_inode, char* last_name) {
     super_block sb;
-    read_block(0, &sb);
+    read_super_block(&sb);
 
     // start at root inode
     *inodeptr = 1;

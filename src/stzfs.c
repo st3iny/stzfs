@@ -115,7 +115,8 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     dir_block root_dir_block;
     memset(&root_dir_block, 0, BLOCK_SIZE);
     root_dir_block.entries[0] = (dir_block_entry) {.name = ".", .inode = 1};
-    blockptr_t root_dir_block_ptr = alloc_block(&root_dir_block);
+    blockptr_t root_dir_block_ptr;
+    alloc_block(&root_dir_block_ptr, &root_dir_block);
     printf("stzfs_makefs: wrote root dir block at %i\n", root_dir_block_ptr);
 
     // create root inode
@@ -522,7 +523,7 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     }
 
     super_block sb;
-    read_block(0, &sb);
+    read_super_block(&sb);
 
     if (sb.free_blocks == 0) {
         printf("stzfs_mkdir: no free block available\n");
@@ -543,7 +544,8 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     memset(&block, 0, BLOCK_SIZE);
     block.entries[0] = (dir_block_entry) {.name = ".", .inode=dir.inodeptr};
     block.entries[1] = (dir_block_entry) {.name = "..", .inode=parent.inodeptr};
-    blockptr_t blockptr = alloc_block(&block);
+    blockptr_t blockptr;
+    alloc_block(&blockptr, &block);
 
     // TODO: check inode bounds
     // increase parent inode link counter
@@ -627,7 +629,7 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
 // retrieve filesystem stats
 int stzfs_statfs(const char* path, struct statvfs* stat) {
     super_block sb;
-    read_block(0, &sb);
+    read_super_block(&sb);
 
     stat->f_bsize = BLOCK_SIZE;
     stat->f_frsize = BLOCK_SIZE;

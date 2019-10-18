@@ -3,14 +3,13 @@
 #include <string.h>
 
 #include "alloc.h"
-#include "blocks.h"
 #include "find.h"
 #include "read.h"
 #include "vm.h"
 
 // read block from disk
 void read_block(blockptr_t blockptr, void* block) {
-    vm_read(blockptr * BLOCK_SIZE, block, BLOCK_SIZE);
+    vm_read((off_t)blockptr * BLOCK_SIZE, block, BLOCK_SIZE);
 }
 
 // read blocks from disk
@@ -20,22 +19,15 @@ void read_blocks(const blockptr_t* blockptrs, void* blocks, blockptr_t length) {
     }
 }
 
-// read block from blockptr if not zero or init the block with zeroes
-int read_or_alloc_block(blockptr_t* blockptr, void* block) {
-    if (*blockptr) {
-        read_block(*blockptr, block);
-        return 0;
-    } else {
-        memset(block, 0, BLOCK_SIZE);
-        *blockptr = alloc_block(block);
-        return 1;
-    }
+// read super block from disk
+void read_super_block(super_block* block) {
+    vm_read(SUPER_BLOCKPTR * BLOCK_SIZE, block, BLOCK_SIZE);
 }
 
 // read inode from disk
 void read_inode(inodeptr_t inodeptr, inode_t* inode) {
     super_block sb;
-    read_block(0, &sb);
+    read_super_block(&sb);
 
     blockptr_t inode_table_block_offset = inodeptr / (BLOCK_SIZE / sizeof(inode_t));
     if (inode_table_block_offset >= sb.inode_table_length) {
