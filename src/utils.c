@@ -1,5 +1,6 @@
 #include <fcntl.h>
 #include <getopt.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -11,7 +12,7 @@
 
 // helpers
 static void utils_print_block_range(blockptr_t offset, blockptr_t length);
-static int utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap,
+static bool utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap,
                                   blockptr_t block_bitmap_length);
 static void utils_print_allocation_status(const char* title, blockptr_t alloc_start,
                                           blockptr_t alloc_end, blockptr_t bitmap_offset,
@@ -180,7 +181,7 @@ void utils_print_block_range(blockptr_t offset, blockptr_t length) {
     }
 }
 
-int utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap, blockptr_t block_bitmap_length) {
+bool utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap, blockptr_t block_bitmap_length) {
     blockptr_t bitmap_block_offset = ptr / (BLOCK_SIZE * 8);
     blockptr_t inner_offset = ptr % (BLOCK_SIZE * 8);
 
@@ -192,41 +193,46 @@ int utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap, blockptr_t b
     // extract bitmap allocation status for given block or inode
     bitmap_block ba;
     vm_read((block_bitmap + bitmap_block_offset) * BLOCK_SIZE, &ba, BLOCK_SIZE);
-    uint64_t status = ba.bitmap[inner_offset / 64] >> (inner_offset % 64);
+    int status = ((*(int*)((void*)&ba + inner_offset / 8)) & 0xff) >> (inner_offset % 8);
 
     // mask status as only the least significant bit matters
-    return (int)(status & 1);
+    return status & 1;
 }
 
 void utils_print_allocation_status(const char* title, blockptr_t alloc_start, blockptr_t alloc_end, blockptr_t bitmap_offset, blockptr_t bitmap_length) {
     printf("allocated_%s = [\n", title);
 
-    long begin = -1;
-    int count = 0;
-    blockptr_t allocptr;
-    for (allocptr = alloc_start; allocptr <= alloc_end; allocptr++) {
-        int printed = 0;
-        if (allocptr < alloc_end && utils_bitmap_allocated(allocptr, bitmap_offset, bitmap_length)) {
-            if (begin == -1) {
-                begin = allocptr;
-            }
-        } else if (begin == allocptr - 1) {
-            printf("\t%lu", begin);
-            printed = 1;
-        } else if (begin != -1) {
-            printf("\t%lu - %i", begin, allocptr - 1);
-            printed = 1;
+    bool begin_set = false;
+    bool end_set = false;
+    blockptr_t begin, end;
+    for (blockptr_t i = alloc_start; i <= alloc_end; i++) {
+        bool allocated;
+        if (i == alloc_end) {
+            allocated = false;
+            end = i - 1;
+            end_set = true;
+        } else {
+            allocated = utils_bitmap_allocated(i, bitmap_offset, bitmap_length);
         }
 
-        if ((printed && count > 0 && count % 10 == 0) || allocptr == alloc_end) {
-            printf("\n");
+        if (!begin_set && allocated) {
+            begin = i;
+            begin_set = true;
+        } else if (begin_set && !allocated) {
+            end = i;
+            end_set = true;
         }
-        if (printed) {
-            printed = 0;
-            begin = -1;
-            count++;
+
+        if (begin_set && end_set) {
+            if (begin == end) {
+                printf("\t%lu", end);
+            } else {
+                printf("\t%lu - %lu", begin, end);
+            }
+            begin_set = false;
+            end_set = false;
         }
     }
 
-    printf("]\n");
+    printf("\n]\n");
 }
