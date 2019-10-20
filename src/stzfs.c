@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "alloc.h"
+#include "bitmap_cache.h"
 #include "blocks.h"
 #include "find.h"
 #include "free.h"
@@ -27,7 +28,7 @@
 
 // fuse operations
 struct fuse_operations stzfs_ops = {
-    .init = stzfs_init,
+    .init = stzfs_fuse_init,
     .destroy = stzfs_destroy,
     .create = stzfs_create,
     .rename = stzfs_rename,
@@ -111,6 +112,9 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     // write superblock
     vm_write(0, &sb, BLOCK_SIZE);
 
+    // init filesystem
+    stzfs_init();
+
     // write root directory block
     dir_block root_dir_block;
     memset(&root_dir_block, 0, BLOCK_SIZE);
@@ -142,12 +146,19 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     return blocks;
 }
 
-// init filesystem
-void* stzfs_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
+// init filesystem from fuse
+void* stzfs_fuse_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
     cfg->kernel_cache = 1;
     cfg->use_ino = 1;
 
+    stzfs_init();
+
     return NULL;
+}
+
+// low level filesystem init (has to be called manually if fuse is not used)
+void stzfs_init(void) {
+    bitmap_cache_init();
 }
 
 // clean up filesystem

@@ -1,4 +1,7 @@
-#include "types.h"
+#ifndef FILESYSTEM_BITMAP_CACHE_H
+#define FILESYSTEM_BITMAP_CACHE_H
+
+#include <stddef.h>
 
 typedef struct bitmap_cache_t {
     void* bitmap;
@@ -6,8 +9,10 @@ typedef struct bitmap_cache_t {
     size_t next;
 } bitmap_cache_t;
 
-// bitmap_cache_t* bitmap_cache_create(blockptr_t blockptr, blockptr_t length);
-void bitmap_cache_create(bitmap_cache_t* cache, blockptr_t blockptr, blockptr_t length);
-void bitmap_cache_dispose(bitmap_cache_t* cache);
-// blockptr_t bitmap_cache_alloc(bitmap_cache_t* cache);
-// blockptr_t bitmap_cache_free(bitmap_cache_t* cache, blockptr_t offset);
+extern bitmap_cache_t inode_bitmap_cache;
+extern bitmap_cache_t block_bitmap_cache;
+
+int bitmap_cache_init(void);
+int bitmap_cache_dispose(void);
+
+#endif // FILESYSTEM_BITMAP_CACHE_H

@@ -22,7 +22,7 @@ int main() {
     vm_config_create_file(VM_HDD_PATH, (long long)blocks * BLOCK_SIZE);
     off_t size = vm_config_set_file(VM_HDD_PATH);
 
-    // create filesystem
+    // create and init filesystem
     stzfs_makefs(inodes);
 
     // create some files

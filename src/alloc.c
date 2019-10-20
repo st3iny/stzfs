@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "alloc.h"
+#include "bitmap_cache.h"
 #include "blocks.h"
 #include "read.h"
 #include "vm.h"
@@ -46,15 +47,8 @@ int alloc_block(blockptr_t* blockptr, const void* block) {
     super_block sb;
     read_super_block(&sb);
 
-    static bitmap_cache_t ba_cache;
-    static bool ba_cache_created = false;
-    if (!ba_cache_created) {
-        bitmap_cache_create(&ba_cache, sb.block_bitmap, sb.block_bitmap_length);
-        ba_cache_created = true;
-    }
-
     // get next free block and write data block
-    const blockptr_t free_block = alloc_bitmap(&ba_cache);
+    const blockptr_t free_block = alloc_bitmap(&block_bitmap_cache);
     if (free_block == 0) {
         printf("alloc_block: could not allocate block\n");
         return -ENOSPC;
@@ -74,15 +68,8 @@ inodeptr_t alloc_inode(const inode_t* new_inode) {
     super_block sb;
     read_super_block(&sb);
 
-    static bitmap_cache_t ba_cache;
-    static bool ba_cache_created = false;
-    if (!ba_cache_created) {
-        bitmap_cache_create(&ba_cache, sb.inode_bitmap, sb.inode_bitmap_length);
-        ba_cache_created = true;
-    }
-
     // get next free inode
-    inodeptr_t next_free_inode = alloc_bitmap(&ba_cache);
+    inodeptr_t next_free_inode = alloc_bitmap(&inode_bitmap_cache);
 
     // get inode table block
     blockptr_t inode_table_blockptr = sb.inode_table + next_free_inode / (BLOCK_SIZE / sizeof(inode_t));
