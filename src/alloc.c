@@ -63,13 +63,31 @@ int alloc_block(blockptr_t* blockptr, const void* block) {
     return 0;
 }
 
-// write an inode in place
+// allocate a new inodeptr only
+// TODO: check free inodes (implement free inode counter in superblock)
+inodeptr_t alloc_inodeptr(void) {
+    super_block sb;
+    read_super_block(&sb);
+
+    const inodeptr_t next_free_inode = alloc_bitmap(&inode_bitmap_cache);
+
+    if (!next_free_inode) {
+        printf("alloc_inodeptr: could not allocate inodeptr\n");
+    }
+    return next_free_inode;
+}
+
+// allocate and write a new inode in place
 inodeptr_t alloc_inode(const inode_t* new_inode) {
     super_block sb;
     read_super_block(&sb);
 
     // get next free inode
-    inodeptr_t next_free_inode = alloc_bitmap(&inode_bitmap_cache);
+    const inodeptr_t next_free_inode = alloc_inodeptr();
+    if (!next_free_inode) {
+        printf("alloc_inode: could not allocate inode\n");
+        return 0;
+    }
 
     // get inode table block
     blockptr_t inode_table_blockptr = sb.inode_table + next_free_inode / (BLOCK_SIZE / sizeof(inode_t));

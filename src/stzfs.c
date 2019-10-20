@@ -548,8 +548,7 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     touch_mtime_and_ctime(&parent.inode);
 
     // allocate inode in bitmap
-    // FIXME: improve bitmap caching
-    // dir.inodeptr = alloc_bitmap("inode", sb.inode_bitmap, sb.inode_bitmap_length);
+    dir.inodeptr = alloc_inodeptr();
 
     // allocate and write directory block
     dir_block block;
