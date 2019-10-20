@@ -61,6 +61,11 @@ off_t vm_config_set_file(const char* path) {
     return size;
 }
 
+// getters
+int vm_get_fd(void) {
+    return fd;
+}
+
 // low level methods
 int vm_write(off_t addr, const void* buffer, size_t length) {
 #if VM_USE_MMAP

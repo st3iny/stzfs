@@ -11,6 +11,9 @@
 int vm_config_create_file(const char* path, off_t length);
 off_t vm_config_set_file(const char* path);
 
+// getters
+int vm_get_fd(void);
+
 // low level methods
 int vm_write(off_t addr, const void* buffer, size_t length);
 int vm_read(off_t addr, void* buffer, size_t length);

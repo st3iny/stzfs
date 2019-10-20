@@ -4,7 +4,7 @@ cmake-build-debug
 **/*.cmake
 CMakeCache.txt
 Makefile
-filesystem.cbp
+stzfs.cbp
 Testing
 
 # clion

@@ -10,46 +10,34 @@
 #include "vm.h"
 #include "write.h"
 
-// alloc inode or block in given bitmap
-blockptr_t alloc_bitmap(const char* title, blockptr_t bitmap_offset, blockptr_t bitmap_length) {
-    bitmap_block ba;
-    blockptr_t current_bitmap_block = bitmap_offset;
+// alloc entry in bitmap
+blockptr_t alloc_bitmap(bitmap_cache_t* cache) {
     blockptr_t next_free = 0;
-    while (next_free == 0 && current_bitmap_block < bitmap_offset + bitmap_length) {
-        read_block(current_bitmap_block, &ba);
-
-        for (int i = 0; i < BITMAP_BLOCK_ENTRIES; i++) {
-            bitmap_entry_t data = ba.bitmap[i];
-            if (~data == 0) {
-                continue;
-            }
-
-            // there is at least one free alloc available
-            int offset = 0;
-            while (offset < sizeof(bitmap_entry_t) * 8 && (data & 1) != 0) {
-                data >>= 1;
-                offset++;
-            }
-
-            // mark alloc in bitmap
-            bitmap_entry_t new_entry = 1;
-            ba.bitmap[i] |= new_entry << offset;
-            next_free = (current_bitmap_block - bitmap_offset) * BLOCK_SIZE * 8
-                        + i * sizeof(bitmap_entry_t) * 8
-                        + offset;
-            break;
+    for (size_t i = cache->next; i < cache->length && !next_free; i += sizeof(bitmap_entry_t)) {
+        bitmap_entry_t* entry = (bitmap_entry_t*)(cache->bitmap + i);
+        if (~*entry == 0) {
+            continue;
         }
 
-        current_bitmap_block++;
+        cache->next = i;
+
+        // there is at least one free alloc available
+        bitmap_entry_t data = *entry;
+        int offset = 0;
+        while (offset < sizeof(bitmap_entry_t) * 8 && (data & 1) != 0) {
+            data >>= 1;
+            offset++;
+        }
+
+        // mark alloc in bitmap
+        bitmap_entry_t new_entry = 1;
+        *entry |= new_entry << offset;
+        next_free = i * 8 + offset;
     }
 
-    if (next_free == 0) {
-        printf("alloc_bitmap: could not allocate a free %s\n", title);
-        return 0;
+    if (!next_free) {
+        printf("alloc_entry: could not allocate entry in bitmap\n");
     }
-
-    write_block(current_bitmap_block - 1, &ba);
-
     return next_free;
 }
 
@@ -58,8 +46,15 @@ int alloc_block(blockptr_t* blockptr, const void* block) {
     super_block sb;
     read_super_block(&sb);
 
+    static bitmap_cache_t ba_cache;
+    static bool ba_cache_created = false;
+    if (!ba_cache_created) {
+        bitmap_cache_create(&ba_cache, sb.block_bitmap, sb.block_bitmap_length);
+        ba_cache_created = true;
+    }
+
     // get next free block and write data block
-    const blockptr_t free_block = alloc_bitmap("block", sb.block_bitmap, sb.block_bitmap_length);
+    const blockptr_t free_block = alloc_bitmap(&ba_cache);
     if (free_block == 0) {
         printf("alloc_block: could not allocate block\n");
         return -ENOSPC;
@@ -77,10 +72,17 @@ int alloc_block(blockptr_t* blockptr, const void* block) {
 // write an inode in place
 inodeptr_t alloc_inode(const inode_t* new_inode) {
     super_block sb;
-    vm_read(0, &sb, BLOCK_SIZE);
+    read_super_block(&sb);
+
+    static bitmap_cache_t ba_cache;
+    static bool ba_cache_created = false;
+    if (!ba_cache_created) {
+        bitmap_cache_create(&ba_cache, sb.inode_bitmap, sb.inode_bitmap_length);
+        ba_cache_created = true;
+    }
 
     // get next free inode
-    inodeptr_t next_free_inode = alloc_bitmap("inode", sb.inode_bitmap, sb.inode_bitmap_length);
+    inodeptr_t next_free_inode = alloc_bitmap(&ba_cache);
 
     // get inode table block
     blockptr_t inode_table_blockptr = sb.inode_table + next_free_inode / (BLOCK_SIZE / sizeof(inode_t));
