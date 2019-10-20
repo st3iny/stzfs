@@ -30,4 +30,7 @@ mode_t mode_stzfs_to_posix(stzfs_mode_t stzfs_mode);
 // return maximum of a and b
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
+// error handling convenience
+#define TRY(try, catch) { int _err = try; if(_err) { catch; return _err; } }
+
 #endif // STZFS_HELPERS_H
