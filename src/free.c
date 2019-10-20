@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "bitmap_cache.h"
 #include "blocks.h"
 #include "free.h"
 #include "helpers.h"
@@ -16,7 +17,7 @@ int free_blocks(const blockptr_t* blockptrs, size_t length) {
     read_super_block(&sb);
 
     for (size_t offset = 0; offset < length; offset++) {
-        int err = free_bitmap(blockptrs[offset], sb.block_bitmap, sb.block_bitmap_length);
+        int err = free_bitmap(&block_bitmap_cache, blockptrs[offset]);
         if (err) return err;
     }
 
@@ -47,7 +48,8 @@ int free_inode(inodeptr_t inodeptr, inode_t* inode) {
     read_super_block(&sb);
 
     // dealloc inode first
-    free_bitmap(inodeptr, sb.inode_bitmap, sb.inode_bitmap_length);
+    int err = free_bitmap(&inode_bitmap_cache, inodeptr);
+    if (err) return err;
 
     // free allocated data blocks in bitmap
     free_inode_data_blocks(inode, 0);
@@ -138,21 +140,20 @@ int free_last_inode_data_block(inode_t* inode) {
 }
 
 // free entry in bitmap
-int free_bitmap(blockptr_t index, blockptr_t bitmap_offset, blockptr_t bitmap_length) {
-    blockptr_t offset = index / (BLOCK_SIZE * 8);
-    if (offset > bitmap_length) {
+int free_bitmap(bitmap_cache_t* cache, objptr_t index) {
+    if (index >= cache->length * 8) {
         printf("free_bitmap: bitmap index out of bounds\n");
-        return -EFAULT;
+        return -EINVAL;
     }
 
-    size_t inner_offset = index % 64;
-    size_t entry = (index % (BLOCK_SIZE * 8)) / 64;
+    const size_t entry_offset = index / (sizeof(bitmap_entry_t) * 8);
+    const size_t inner_offset = index % (sizeof(bitmap_entry_t) * 8);
+    bitmap_entry_t* entry = (bitmap_entry_t*)(cache->bitmap + entry_offset);
+    *entry ^= (bitmap_entry_t)1 << inner_offset;
 
-    blockptr_t blockptr = bitmap_offset + offset;
-    bitmap_block ba;
-    read_block(blockptr, &ba);
-    ba.bitmap[entry] ^= 1UL << inner_offset;
-    write_block(blockptr, &ba);
+    if (entry_offset < cache->next) {
+        cache->next = entry_offset;
+    }
 
     return 0;
 }

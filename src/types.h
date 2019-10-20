@@ -40,4 +40,7 @@ typedef uint32_t inodeptr_t;
 typedef uint32_t blockptr_t;
 typedef uint64_t bitmap_entry_t;
 
+// can safely store inode and block pointers
+typedef uint32_t objptr_t;
+
 #endif // FILESYSTEM_TYPES_H
