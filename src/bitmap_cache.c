@@ -41,11 +41,10 @@ int bitmap_cache_dispose(void) {
 static int create_cache(bitmap_cache_t* cache, blockptr_t blockptr, blockptr_t length) {
     cache->length = (size_t)length * BLOCK_SIZE;
     cache->bitmap = mmap(NULL, cache->length, PROT_READ | PROT_WRITE, MAP_SHARED, vm_get_fd(),
-                        (off_t)blockptr * BLOCK_SIZE);
+                         (off_t)blockptr * BLOCK_SIZE);
     cache->next = 0;
 
     if (cache->bitmap == MAP_FAILED) {
-        printf("errno = %i\n", errno);
         return -errno;
     }
 

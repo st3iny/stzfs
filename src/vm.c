@@ -55,7 +55,6 @@ off_t vm_config_set_file(const char* path) {
 
 #if VM_USE_MMAP
     fp = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    close(fd);
 #endif
 
     return size;
@@ -123,7 +122,6 @@ off_t vm_size() {
 void vm_destroy(void) {
 #if VM_USE_MMAP
     munmap(fp, size);
-#else
-    close(fd);
 #endif
+    close(fd);
 }
