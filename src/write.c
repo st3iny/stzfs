@@ -8,6 +8,7 @@
 #include "helpers.h"
 #include "vm.h"
 #include "read.h"
+#include "super_block_cache.h"
 #include "write.h"
 
 // write block to disk
@@ -16,8 +17,10 @@ void write_block(blockptr_t blockptr, const void* block) {
 }
 
 // write super block to disk
+// FIXME: implement super block pointers everywhere
 void write_super_block(const super_block* block) {
-    vm_write(SUPER_BLOCKPTR * BLOCK_SIZE, block, BLOCK_SIZE);
+    *super_block_cache = *block;
+    super_block_cache_sync();
 }
 
 // write inode to disk

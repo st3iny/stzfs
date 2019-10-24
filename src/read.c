@@ -5,6 +5,7 @@
 #include "alloc.h"
 #include "find.h"
 #include "read.h"
+#include "super_block_cache.h"
 #include "vm.h"
 
 // read block from disk
@@ -20,8 +21,9 @@ void read_blocks(const blockptr_t* blockptrs, void* blocks, blockptr_t length) {
 }
 
 // read super block from disk
+// FIXME: implement super block pointers everywhere
 void read_super_block(super_block* block) {
-    vm_read(SUPER_BLOCKPTR * BLOCK_SIZE, block, BLOCK_SIZE);
+    *block = *super_block_cache;
 }
 
 // read inode from disk

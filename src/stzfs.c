@@ -17,6 +17,7 @@
 #include "inode.h"
 #include "read.h"
 #include "stzfs.h"
+#include "super_block_cache.h"
 #include "vm.h"
 #include "write.h"
 
@@ -29,7 +30,7 @@
 // fuse operations
 struct fuse_operations stzfs_ops = {
     .init = stzfs_fuse_init,
-    .destroy = stzfs_destroy,
+    .destroy = stzfs_fuse_destroy,
     .create = stzfs_create,
     .rename = stzfs_rename,
     .unlink = stzfs_unlink,
@@ -158,11 +159,19 @@ void* stzfs_fuse_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
 
 // low level filesystem init (has to be called manually if fuse is not used)
 void stzfs_init(void) {
+    super_block_cache_init();
     bitmap_cache_init();
 }
 
-// clean up filesystem
-void stzfs_destroy(void* private_data) {
+// clean up filesystem from fuse
+void stzfs_fuse_destroy(void* private_data) {
+    stzfs_destroy();
+}
+
+// low level filesystem cleanup (has to be called manually if fuse is not used)
+void stzfs_destroy(void) {
+    bitmap_cache_dispose();
+    super_block_cache_dispose();
     vm_destroy();
 }
 

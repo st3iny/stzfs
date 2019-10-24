@@ -14,7 +14,8 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count);
 
 void* stzfs_fuse_init(struct fuse_conn_info* conn, struct fuse_config* cfg);
 void stzfs_init(void);
-void stzfs_destroy(void* private_data);
+void stzfs_fuse_destroy(void* private_data);
+void stzfs_destroy(void);
 
 int stzfs_open(const char* file_path, struct fuse_file_info* file_info);
 
