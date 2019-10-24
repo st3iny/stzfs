@@ -10,13 +10,13 @@
 
 // read block from disk
 void read_block(blockptr_t blockptr, void* block) {
-    vm_read((off_t)blockptr * BLOCK_SIZE, block, BLOCK_SIZE);
+    vm_read((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
 }
 
 // read blocks from disk
 void read_blocks(const blockptr_t* blockptrs, void* blocks, blockptr_t length) {
     for (size_t i = 0; i < length; i++) {
-        read_block(blockptrs[i], blocks + i * BLOCK_SIZE);
+        read_block(blockptrs[i], blocks + i * STZFS_BLOCK_SIZE);
     }
 }
 
@@ -31,7 +31,7 @@ void read_inode(inodeptr_t inodeptr, inode_t* inode) {
     super_block sb;
     read_super_block(&sb);
 
-    blockptr_t inode_table_block_offset = inodeptr / (BLOCK_SIZE / sizeof(inode_t));
+    blockptr_t inode_table_block_offset = inodeptr / (STZFS_BLOCK_SIZE / sizeof(inode_t));
     if (inode_table_block_offset >= sb.inode_table_length) {
         printf("read_inode: out of bounds while trying to read inode\n");
         return;
@@ -43,7 +43,7 @@ void read_inode(inodeptr_t inodeptr, inode_t* inode) {
     read_block(inode_table_blockptr, &inode_table_block);
 
     // read inode from inode table block
-    *inode = inode_table_block.inodes[inodeptr % (BLOCK_SIZE / sizeof(inode_t))];
+    *inode = inode_table_block.inodes[inodeptr % (STZFS_BLOCK_SIZE / sizeof(inode_t))];
 }
 
 // read inode data block with relative offset

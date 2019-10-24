@@ -90,13 +90,13 @@ inodeptr_t alloc_inode(const inode_t* new_inode) {
     }
 
     // get inode table block
-    blockptr_t inode_table_blockptr = sb.inode_table + next_free_inode / (BLOCK_SIZE / sizeof(inode_t));
+    blockptr_t inode_table_blockptr = sb.inode_table + next_free_inode / (STZFS_BLOCK_SIZE / sizeof(inode_t));
     inode_block inode_table_block;
-    vm_read(inode_table_blockptr * BLOCK_SIZE, &inode_table_block, BLOCK_SIZE);
+    vm_read(inode_table_blockptr * STZFS_BLOCK_SIZE, &inode_table_block, STZFS_BLOCK_SIZE);
 
     // place inode into table and write table block
-    inode_table_block.inodes[next_free_inode % (BLOCK_SIZE / sizeof(inode_t))] = *new_inode;
-    vm_write(inode_table_blockptr * BLOCK_SIZE, &inode_table_block, BLOCK_SIZE);
+    inode_table_block.inodes[next_free_inode % (STZFS_BLOCK_SIZE / sizeof(inode_t))] = *new_inode;
+    vm_write(inode_table_blockptr * STZFS_BLOCK_SIZE, &inode_table_block, STZFS_BLOCK_SIZE);
 
     return next_free_inode;
 }
@@ -212,7 +212,7 @@ int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr
 
     if (next_free_entry == 0) {
         // allocate a new dir block
-        memset(&block, 0, BLOCK_SIZE);
+        memset(&block, 0, STZFS_BLOCK_SIZE);
     } else {
         read_inode_data_block(inode, block_offset, &block);
     }

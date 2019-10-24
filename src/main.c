@@ -19,7 +19,7 @@ int main() {
     const inodeptr_t inodes = (const inodeptr_t)pow(2, 20);
 
     // create vm hdd
-    vm_config_create_file(VM_HDD_PATH, (long long)blocks * BLOCK_SIZE);
+    vm_config_create_file(VM_HDD_PATH, (long long)blocks * STZFS_BLOCK_SIZE);
     off_t size = vm_config_set_file(VM_HDD_PATH);
 
     // create and init filesystem
@@ -34,7 +34,7 @@ int main() {
     stzfs_create("/some_file", 0, &file_info);
 
     // write data to a file
-    char buffer[1024 * BLOCK_SIZE];
+    char buffer[1024 * STZFS_BLOCK_SIZE];
     size_t len;
     long offset = 0;
     int fd = open("/tmp/bigfile", O_RDONLY);

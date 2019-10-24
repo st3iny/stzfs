@@ -13,7 +13,7 @@
 
 // write block to disk
 void write_block(blockptr_t blockptr, const void* block) {
-    vm_write((off_t)blockptr * BLOCK_SIZE, block, BLOCK_SIZE);
+    vm_write((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
 }
 
 // write super block to disk

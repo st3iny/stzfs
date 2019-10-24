@@ -53,19 +53,19 @@ struct fuse_operations stzfs_ops = {
 
 // init filesystem
 blockptr_t stzfs_makefs(inodeptr_t inode_count) {
-    blockptr_t blocks = vm_size() / BLOCK_SIZE;
+    blockptr_t blocks = vm_size() / STZFS_BLOCK_SIZE;
     printf("stzfs_makefs: creating file system with %i blocks and %i inodes\n", blocks, inode_count);
 
     // calculate bitmap and inode table lengths
-    blockptr_t block_bitmap_length = DIV_CEIL(blocks, BLOCK_SIZE * 8);
-    inodeptr_t inode_table_length = DIV_CEIL(inode_count, BLOCK_SIZE / sizeof(inode_t));
-    inodeptr_t inode_bitmap_length = DIV_CEIL(inode_count, BLOCK_SIZE * 8);
+    blockptr_t block_bitmap_length = DIV_CEIL(blocks, STZFS_BLOCK_SIZE * 8);
+    inodeptr_t inode_table_length = DIV_CEIL(inode_count, STZFS_BLOCK_SIZE / sizeof(inode_t));
+    inodeptr_t inode_bitmap_length = DIV_CEIL(inode_count, STZFS_BLOCK_SIZE * 8);
 
     const blockptr_t initial_block_count = 1 + block_bitmap_length + inode_bitmap_length + inode_table_length;
 
     // create superblock
     super_block sb;
-    memset(&sb, 0, BLOCK_SIZE);
+    memset(&sb, 0, STZFS_BLOCK_SIZE);
     sb.block_count = blocks;
     sb.free_blocks = blocks - initial_block_count;
     sb.free_inodes = inode_count - 2;
@@ -79,9 +79,9 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
 
     // initialize all bitmaps and inode table with zeroes
     data_block initial_block;
-    memset(&initial_block, 0, BLOCK_SIZE);
+    memset(&initial_block, 0, STZFS_BLOCK_SIZE);
     for (blockptr_t blockptr = 0; blockptr < initial_block_count; blockptr++) {
-        vm_write(blockptr * BLOCK_SIZE, &initial_block, BLOCK_SIZE);
+        vm_write(blockptr * STZFS_BLOCK_SIZE, &initial_block, STZFS_BLOCK_SIZE);
     }
     printf("stzfs_makefs: wrote %i initial blocks\n", initial_block_count);
 
@@ -90,35 +90,35 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     blockptr_t initial_bitmap_offset;
 
     // write full bitmap blocks
-    memset(&ba, 0xff, BLOCK_SIZE);
-    blockptr_t initial_allocated_bitmap_blocks = initial_block_count / (BLOCK_SIZE * 8);
+    memset(&ba, 0xff, STZFS_BLOCK_SIZE);
+    blockptr_t initial_allocated_bitmap_blocks = initial_block_count / (STZFS_BLOCK_SIZE * 8);
     for (initial_bitmap_offset = 0; initial_bitmap_offset < initial_allocated_bitmap_blocks; initial_bitmap_offset++) {
-        vm_write((sb.block_bitmap + initial_bitmap_offset) * BLOCK_SIZE, &ba, BLOCK_SIZE);
+        vm_write((sb.block_bitmap + initial_bitmap_offset) * STZFS_BLOCK_SIZE, &ba, STZFS_BLOCK_SIZE);
     }
 
     // write partially filled bitmap block
-    unsigned int allocated_entries = (initial_block_count % (BLOCK_SIZE * 8)) / 64;
-    memset(&ba, 0, BLOCK_SIZE);
+    unsigned int allocated_entries = (initial_block_count % (STZFS_BLOCK_SIZE * 8)) / 64;
+    memset(&ba, 0, STZFS_BLOCK_SIZE);
     memset(&ba, 0xff, allocated_entries * 8);
-    int shift_partial_entry = (initial_block_count % (BLOCK_SIZE * 8)) % 64;
+    int shift_partial_entry = (initial_block_count % (STZFS_BLOCK_SIZE * 8)) % 64;
     ba.bitmap[allocated_entries] = (1UL << shift_partial_entry) - 1UL;
-    vm_write((sb.block_bitmap + initial_bitmap_offset) * BLOCK_SIZE, &ba, BLOCK_SIZE);
+    vm_write((sb.block_bitmap + initial_bitmap_offset) * STZFS_BLOCK_SIZE, &ba, STZFS_BLOCK_SIZE);
 
     // write initial inode bitmap
     bitmap_block first_inode_bitmap_block;
-    memset(&first_inode_bitmap_block, 0, BLOCK_SIZE);
+    memset(&first_inode_bitmap_block, 0, STZFS_BLOCK_SIZE);
     first_inode_bitmap_block.bitmap[0] = 1;
-    vm_write(sb.inode_bitmap * BLOCK_SIZE, &first_inode_bitmap_block, BLOCK_SIZE);
+    vm_write(sb.inode_bitmap * STZFS_BLOCK_SIZE, &first_inode_bitmap_block, STZFS_BLOCK_SIZE);
 
     // write superblock
-    vm_write(0, &sb, BLOCK_SIZE);
+    vm_write(0, &sb, STZFS_BLOCK_SIZE);
 
     // init filesystem
     stzfs_init();
 
     // write root directory block
     dir_block root_dir_block;
-    memset(&root_dir_block, 0, BLOCK_SIZE);
+    memset(&root_dir_block, 0, STZFS_BLOCK_SIZE);
     root_dir_block.entries[0] = (dir_block_entry) {.name = ".", .inode = 1};
     blockptr_t root_dir_block_ptr;
     alloc_block(&root_dir_block_ptr, &root_dir_block);
@@ -274,14 +274,14 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
 
     // read first partial block
     size_t read_bytes = 0;
-    blockptr_t initial_offset = offset / BLOCK_SIZE;
-    size_t initial_byte_offset = offset % BLOCK_SIZE;
+    blockptr_t initial_offset = offset / STZFS_BLOCK_SIZE;
+    size_t initial_byte_offset = offset % STZFS_BLOCK_SIZE;
     if (initial_byte_offset > 0) {
         data_block block;
         read_inode_data_block(&inode, initial_offset, &block);
 
         // keep block boundaries
-        read_bytes = BLOCK_SIZE - initial_byte_offset;
+        read_bytes = STZFS_BLOCK_SIZE - initial_byte_offset;
         if (read_bytes > length) {
             read_bytes = length;
         }
@@ -298,12 +298,12 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
         size_t diff = max_bytes - read_bytes;
         if (diff <= 0) {
             break;
-        } else if (diff > 0 && diff < BLOCK_SIZE) {
+        } else if (diff > 0 && diff < STZFS_BLOCK_SIZE) {
             memcpy(&buffer[read_bytes], &block, diff);
             read_bytes += diff;
         } else {
-            memcpy(&buffer[read_bytes], &block, BLOCK_SIZE);
-            read_bytes += BLOCK_SIZE;
+            memcpy(&buffer[read_bytes], &block, STZFS_BLOCK_SIZE);
+            read_bytes += STZFS_BLOCK_SIZE;
         }
     }
 
@@ -329,7 +329,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
 
     // check file size limits
     const uint64_t new_atom_count = MAX(offset + length, inode.atom_count);
-    const blockptr_t new_block_count = DIV_CEIL(new_atom_count, BLOCK_SIZE);
+    const blockptr_t new_block_count = DIV_CEIL(new_atom_count, STZFS_BLOCK_SIZE);
     if (new_block_count > INODE_MAX_BLOCKS) {
         printf("stzfs_write: max file size exceeded\n");
         return -EFBIG;
@@ -348,20 +348,20 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     size_t written_bytes = 0;
 
     // write first partial block
-    const blockptr_t first_blockptr = offset / BLOCK_SIZE;
+    const blockptr_t first_blockptr = offset / STZFS_BLOCK_SIZE;
     const blockptr_t last_blockptr = new_block_count - 1;
-    const size_t initial_byte_offset = offset % BLOCK_SIZE;
+    const size_t initial_byte_offset = offset % STZFS_BLOCK_SIZE;
     blockptr_t blockptr = first_blockptr;
     if (initial_byte_offset > 0) {
         data_block block;
         if (blockptr >= inode.block_count) {
-            memset(&block, 0, BLOCK_SIZE);
+            memset(&block, 0, STZFS_BLOCK_SIZE);
         } else {
             read_inode_data_block(&inode, blockptr, &block);
         }
 
         // keep block boundaries
-        written_bytes = BLOCK_SIZE - initial_byte_offset;
+        written_bytes = STZFS_BLOCK_SIZE - initial_byte_offset;
         if (written_bytes > length) {
             written_bytes = length;
         }
@@ -372,9 +372,9 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     }
 
     // write aligned full blocks
-    for (; blockptr < new_block_count && (length - written_bytes) >= BLOCK_SIZE; blockptr++) {
+    for (; blockptr < new_block_count && (length - written_bytes) >= STZFS_BLOCK_SIZE; blockptr++) {
         write_or_alloc_inode_data_block(&inode, blockptr, &buffer[written_bytes]);
-        written_bytes += BLOCK_SIZE;
+        written_bytes += STZFS_BLOCK_SIZE;
     }
 
     // write final partial block
@@ -385,7 +385,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
         if (last_blockptr < inode.block_count) {
             read_inode_data_block(&inode, last_blockptr, &block);
         } else {
-            memset(&block.data[diff], 0, BLOCK_SIZE - diff);
+            memset(&block.data[diff], 0, STZFS_BLOCK_SIZE - diff);
         }
 
         memcpy(&block, &buffer[written_bytes], diff);
@@ -561,7 +561,7 @@ int stzfs_mkdir(const char* path, mode_t mode) {
 
     // allocate and write directory block
     dir_block block;
-    memset(&block, 0, BLOCK_SIZE);
+    memset(&block, 0, STZFS_BLOCK_SIZE);
     block.entries[0] = (dir_block_entry) {.name = ".", .inode=dir.inodeptr};
     block.entries[1] = (dir_block_entry) {.name = "..", .inode=parent.inodeptr};
     blockptr_t blockptr;
@@ -651,8 +651,8 @@ int stzfs_statfs(const char* path, struct statvfs* stat) {
     super_block sb;
     read_super_block(&sb);
 
-    stat->f_bsize = BLOCK_SIZE;
-    stat->f_frsize = BLOCK_SIZE;
+    stat->f_bsize = STZFS_BLOCK_SIZE;
+    stat->f_frsize = STZFS_BLOCK_SIZE;
     stat->f_blocks = sb.block_count;
     stat->f_bfree = sb.free_blocks;
     stat->f_bavail = sb.free_blocks;
@@ -739,7 +739,7 @@ int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
         touch_mtime_and_ctime(&f.inode);
     }
 
-    blockptr_t block_offset = DIV_CEIL(offset, BLOCK_SIZE);
+    blockptr_t block_offset = DIV_CEIL(offset, STZFS_BLOCK_SIZE);
     if (block_offset < f.inode.block_count) {
         free_inode_data_blocks(&f.inode, block_offset);
     }
@@ -840,12 +840,12 @@ int stzfs_symlink(const char* target, const char* link_name) {
 
     // write target to symbolic link data blocks
     const size_t target_length = strlen(target);
-    const size_t buffer_length = DIV_CEIL(sizeof(char) * target_length, BLOCK_SIZE) * BLOCK_SIZE;
+    const size_t buffer_length = DIV_CEIL(sizeof(char) * target_length, STZFS_BLOCK_SIZE) * STZFS_BLOCK_SIZE;
     void* buffer = malloc(buffer_length);
     memcpy(buffer, target, target_length);
     memset(buffer + target_length, 0, buffer_length - target_length);
 
-    for (size_t offset = 0; offset < buffer_length; offset += BLOCK_SIZE) {
+    for (size_t offset = 0; offset < buffer_length; offset += STZFS_BLOCK_SIZE) {
         alloc_inode_data_block(&symlink.inode, buffer + offset);
     }
     symlink.inode.atom_count = target_length;

@@ -5,7 +5,8 @@
 
 // defs
 #define EOF (-1)
-#define BLOCK_SIZE (4096) // 4 KiB
+#define STZFS_BLOCK_SIZE_BITS (12) // 4 KiB
+#define STZFS_BLOCK_SIZE (1 << STZFS_BLOCK_SIZE_BITS)
 #define MAX_FILENAME_LENGTH (256 - sizeof(inodeptr_t)) // 251 characters
 
 // file modes

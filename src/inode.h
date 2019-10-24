@@ -37,7 +37,7 @@ typedef struct inode_t {
 } inode_t;
 
 #define INODE_SIZE (sizeof(inode_t))
-#define INODE_BLOCK_ENTRIES (BLOCK_SIZE / sizeof(inode_t))
+#define INODE_BLOCK_ENTRIES (STZFS_BLOCK_SIZE / sizeof(inode_t))
 
 // group inode and inodeptr for convenience
 typedef struct file {

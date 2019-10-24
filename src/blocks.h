@@ -20,7 +20,7 @@ typedef struct super_block {
     blockptr_t inode_table_length;
     inodeptr_t inode_count;
 
-    int8_t padding[BLOCK_SIZE - sizeof(blockptr_t) * 8 - sizeof(inodeptr_t) * 2];
+    int8_t padding[STZFS_BLOCK_SIZE - sizeof(blockptr_t) * 8 - sizeof(inodeptr_t) * 2];
 } super_block;
 
 typedef struct inode_block {
@@ -33,26 +33,26 @@ typedef struct dir_block_entry {
     inodeptr_t inode;
 } dir_block_entry;
 
-#define DIR_BLOCK_ENTRIES (BLOCK_SIZE / sizeof(dir_block_entry))
+#define DIR_BLOCK_ENTRIES (STZFS_BLOCK_SIZE / sizeof(dir_block_entry))
 
 typedef struct dir_block {
     dir_block_entry entries[DIR_BLOCK_ENTRIES];
 } dir_block;
 
-#define INDIRECT_BLOCK_ENTRIES (BLOCK_SIZE / sizeof(blockptr_t))
+#define INDIRECT_BLOCK_ENTRIES (STZFS_BLOCK_SIZE / sizeof(blockptr_t))
 
 typedef struct indirect_block {
     blockptr_t blocks[INDIRECT_BLOCK_ENTRIES];
 } indirect_block;
 
-#define BITMAP_BLOCK_ENTRIES (BLOCK_SIZE / sizeof(bitmap_entry_t))
+#define BITMAP_BLOCK_ENTRIES (STZFS_BLOCK_SIZE / sizeof(bitmap_entry_t))
 
 typedef struct bitmap_block {
     bitmap_entry_t bitmap[BITMAP_BLOCK_ENTRIES];
 } bitmap_block;
 
 typedef struct data_block {
-    uint8_t data[BLOCK_SIZE];
+    uint8_t data[STZFS_BLOCK_SIZE];
 } data_block;
 
 #endif // FILESYSTEM_BLOCKS_H
