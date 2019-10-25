@@ -49,24 +49,31 @@ static int alloc_bitmap(objptr_t* index, bitmap_cache_t* cache) {
 
 // allocate new blockptr only
 int alloc_blockptr(blockptr_t* blockptr) {
+    int return_code = 0;
     super_block* sb = super_block_cache;
 
     if (sb->free_blocks == 0) {
         printf("alloc_blockptr: no free block available\n");
-        return -ENOSPC;
+        return_code = -ENOSPC;
+        goto END;
     }
 
     const int err = alloc_bitmap((objptr_t*)blockptr, &block_bitmap_cache);
     if (err) {
         printf("alloc_blockptr: could not allocate blockptr\n");
-        return err;
+        return_code = err;
+        goto END;
     }
 
     // update superblock
     sb->free_blocks--;
     super_block_cache_sync();
 
-    return 0;
+END:
+    if (return_code) {
+        *blockptr = BLOCKPTR_ERROR;
+    }
+    return return_code;
 }
 
 // allocate and write new block in place
@@ -84,24 +91,31 @@ int alloc_block(blockptr_t* blockptr, const void* block) {
 
 // allocate new inodeptr only
 int alloc_inodeptr(inodeptr_t* inodeptr) {
+    int return_code = 0;
     super_block* sb = super_block_cache;
 
     if (sb->free_inodes == 0) {
         printf("alloc_inodeptr: no free inode available\n");
-        return -ENOSPC;
+        return_code = -ENOSPC;
+        goto END;
     }
 
     const int err = alloc_bitmap((objptr_t*)inodeptr, &inode_bitmap_cache);
     if (err) {
         printf("alloc_inodeptr: could not allocate inodeptr\n");
-        return err;
+        return_code = err;
+        goto END;
     }
 
     // update superblock
     sb->free_inodes--;
     super_block_cache_sync();
 
-    return 0;
+END:
+    if (return_code) {
+        *inodeptr = INODEPTR_ERROR;
+    }
+    return return_code;
 }
 
 // allocate and write a new inode in place

@@ -13,7 +13,15 @@
 
 // write block to disk
 void write_block(blockptr_t blockptr, const void* block) {
-    vm_write((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
+    if (blockptr == SUPER_BLOCKPTR) {
+        printf("write_block: trying to write protected super block\n");
+    } else if (blockptr == NULL_BLOCKPTR) {
+        printf("write_block: trying to write null block\n");
+    } else if (blockptr > BLOCKPTR_MAX) {
+        printf("write_block: blockptr out of bounds\n");
+    } else {
+        vm_write((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
+    }
 }
 
 // write inode to disk

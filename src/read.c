@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "alloc.h"
 #include "find.h"
 #include "read.h"
 #include "super_block_cache.h"
@@ -10,7 +9,15 @@
 
 // read block from disk
 void read_block(blockptr_t blockptr, void* block) {
-    vm_read((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
+    if (blockptr == SUPER_BLOCKPTR) {
+        printf("read_block: trying to read protected super block\n");
+    } else if (blockptr == NULL_BLOCKPTR) {
+        printf("read_block: trying to read null block\n");
+    } else if (blockptr > BLOCKPTR_MAX) {
+        printf("read_block: blockptr out of bounds\n");
+    } else {
+        vm_read((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
+    }
 }
 
 // read blocks from disk
