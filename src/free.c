@@ -8,13 +8,13 @@
 #include "free.h"
 #include "helpers.h"
 #include "read.h"
+#include "super_block_cache.h"
 #include "write.h"
 
 // free blocks in bitmap
 // TODO: improve me
 int free_blocks(const blockptr_t* blockptrs, size_t length) {
-    super_block sb;
-    read_super_block(&sb);
+    super_block* sb = super_block_cache;
 
     for (size_t offset = 0; offset < length; offset++) {
         int err = free_bitmap(&block_bitmap_cache, blockptrs[offset]);
@@ -22,8 +22,8 @@ int free_blocks(const blockptr_t* blockptrs, size_t length) {
     }
 
     // update superblock
-    sb.free_blocks += length;
-    write_super_block(&sb);
+    sb->free_blocks += length;
+    super_block_cache_sync();
 
     return 0;
 }
@@ -43,9 +43,6 @@ int free_inode(inodeptr_t inodeptr, inode_t* inode) {
         printf("free_inode: file inode link count too high\n");
         return -EPERM;
     }
-
-    super_block sb;
-    read_super_block(&sb);
 
     // dealloc inode first
     int err = free_bitmap(&inode_bitmap_cache, inodeptr);

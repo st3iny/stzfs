@@ -9,6 +9,8 @@
 #include "blocks.h"
 #include "read.h"
 #include "types.h"
+#include "stzfs.h"
+#include "super_block_cache.h"
 #include "utils.h"
 #include "vm.h"
 
@@ -50,6 +52,7 @@ int main(int argc, char** argv) {
 
     // set vm hdd file
     vm_config_set_file(argv[1]);
+    stzfs_init();
 
     // loop as long as there are long options available
     int opt;
@@ -64,74 +67,68 @@ int main(int argc, char** argv) {
 
 // callable from argv
 void utils_print_superblock(const char* arg) {
-    super_block sb;
-    vm_read(0, &sb, STZFS_BLOCK_SIZE);
-
+    const super_block* sb = super_block_cache;
     printf("super_block = {\n");
-    printf("\tblock_count = %i\n", sb.block_count);
-    printf("\tfree_blocks = %i\n", sb.free_blocks);
-    printf("\tblock_bitmap = %i\n", sb.block_bitmap);
-    printf("\tblock_bitmap_length = %i\n", sb.block_bitmap_length);
-    printf("\tinode_bitmap = %i\n", sb.inode_bitmap);
-    printf("\tinode_bitmap_length = %i\n", sb.inode_bitmap_length);
-    printf("\tinode_table = %i\n", sb.inode_table);
-    printf("\tinode_table_length = %i\n", sb.inode_table_length);
-    printf("\tinode_count = %i\n", sb.inode_count);
+    printf("\tblock_count = %i\n", sb->block_count);
+    printf("\tfree_blocks = %i\n", sb->free_blocks);
+    printf("\tblock_bitmap = %i\n", sb->block_bitmap);
+    printf("\tblock_bitmap_length = %i\n", sb->block_bitmap_length);
+    printf("\tinode_bitmap = %i\n", sb->inode_bitmap);
+    printf("\tinode_bitmap_length = %i\n", sb->inode_bitmap_length);
+    printf("\tinode_table = %i\n", sb->inode_table);
+    printf("\tinode_table_length = %i\n", sb->inode_table_length);
+    printf("\tinode_count = %i\n", sb->inode_count);
     printf("}\n");
 }
 
 void utils_print_inode_alloc(const char* arg) {
-    super_block sb;
-    vm_read(0, &sb, STZFS_BLOCK_SIZE);
-    utils_print_allocation_status("inodes", 1, sb.inode_count, sb.inode_bitmap, sb.inode_bitmap_length);
+    const super_block* sb = super_block_cache;
+    utils_print_allocation_status("inodes", 1, sb->inode_count, sb->inode_bitmap,
+                                  sb->inode_bitmap_length);
 }
 
 void utils_print_block_alloc(const char* arg) {
-    super_block sb;
-    vm_read(0, &sb, STZFS_BLOCK_SIZE);
-    utils_print_allocation_status("blocks", 0, sb.block_count, sb.block_bitmap, sb.block_bitmap_length);
+    const super_block* sb = super_block_cache;
+    utils_print_allocation_status("blocks", 0, sb->block_count, sb->block_bitmap,
+                                  sb->block_bitmap_length);
 }
 
 void utils_print_block_bitmap(const char* arg) {
-    super_block sb;
-    vm_read(0, &sb, STZFS_BLOCK_SIZE);
-    utils_print_block_range(sb.block_bitmap, sb.block_bitmap_length);
+    const super_block* sb = super_block_cache;
+    utils_print_block_range(sb->block_bitmap, sb->block_bitmap_length);
 }
 
 void utils_print_inode_bitmap(const char* arg) {
-    super_block sb;
-    vm_read(0, &sb, STZFS_BLOCK_SIZE);
-    utils_print_block_range(sb.inode_bitmap, sb.inode_bitmap_length);
+    const super_block* sb = super_block_cache;
+    utils_print_block_range(sb->inode_bitmap, sb->inode_bitmap_length);
 }
 
 void utils_print_inode_table(const char* arg) {
-    super_block sb;
-    vm_read(0, &sb, STZFS_BLOCK_SIZE);
-    utils_print_block_range(sb.inode_table, sb.inode_table_length);
+    const super_block* sb = super_block_cache;
+    utils_print_block_range(sb->inode_table, sb->inode_table_length);
 }
 
 void utils_print_block(const char* arg) {
     blockptr_t blockptr = strtol(arg, NULL, 10);
     data_block block;
-    vm_read(blockptr * STZFS_BLOCK_SIZE, &block, STZFS_BLOCK_SIZE);
+    read_block(blockptr, &block);
 
     // write block to stdout to enable piping to hexdump for example
     write(1, &block, STZFS_BLOCK_SIZE);
 }
 
 void utils_print_inode(const char* arg) {
-    super_block sb;
-    vm_read(0, &sb, STZFS_BLOCK_SIZE);
+    const super_block* sb = super_block_cache;
 
     inodeptr_t inodeptr = strtol(arg, NULL, 10);
     blockptr_t inode_table_block_offset = inodeptr / (STZFS_BLOCK_SIZE / INODE_SIZE);
 
-    if (inode_table_block_offset > sb.inode_table_length) {
+    if (inode_table_block_offset > sb->inode_table_length) {
         fprintf(stderr, "out of bound while trying to read inode at %i\n", inodeptr);
     }
 
     inode_block inode_table_block;
-    vm_read((sb.inode_table + inode_table_block_offset) * STZFS_BLOCK_SIZE, &inode_table_block, STZFS_BLOCK_SIZE);
+    read_block(sb->inode_table + inode_table_block_offset, &inode_table_block);
     inode_t* inode_data = &inode_table_block.inodes[inodeptr % (STZFS_BLOCK_SIZE / INODE_SIZE)];
 
     printf("inode@%i = {\n", inodeptr);
@@ -178,7 +175,7 @@ void utils_print_inode(const char* arg) {
 void utils_print_block_range(blockptr_t offset, blockptr_t length) {
     for (blockptr_t blockptr = offset; blockptr < offset + length; blockptr++) {
         data_block block;
-        vm_read(blockptr * STZFS_BLOCK_SIZE, &block, STZFS_BLOCK_SIZE);
+        read_block(blockptr, &block);
         write(1, &block, STZFS_BLOCK_SIZE);
     }
 }

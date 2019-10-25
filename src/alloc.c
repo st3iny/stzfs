@@ -8,6 +8,7 @@
 #include "bitmap_cache.h"
 #include "blocks.h"
 #include "read.h"
+#include "super_block_cache.h"
 #include "write.h"
 
 static int alloc_bitmap(objptr_t* index, bitmap_cache_t* cache);
@@ -48,10 +49,9 @@ static int alloc_bitmap(objptr_t* index, bitmap_cache_t* cache) {
 
 // allocate new blockptr only
 int alloc_blockptr(blockptr_t* blockptr) {
-    super_block sb;
-    read_super_block(&sb);
+    super_block* sb = super_block_cache;
 
-    if (sb.free_blocks == 0) {
+    if (sb->free_blocks == 0) {
         printf("alloc_blockptr: no free block available\n");
         return -ENOSPC;
     }
@@ -63,17 +63,14 @@ int alloc_blockptr(blockptr_t* blockptr) {
     }
 
     // update superblock
-    sb.free_blocks--;
-    write_super_block(&sb);
+    sb->free_blocks--;
+    super_block_cache_sync();
 
     return 0;
 }
 
 // allocate and write new block in place
 int alloc_block(blockptr_t* blockptr, const void* block) {
-    super_block sb;
-    read_super_block(&sb);
-
     const int err = alloc_blockptr(blockptr);
     if (err) {
         printf("alloc_block: could not allocate block\n");
@@ -87,10 +84,9 @@ int alloc_block(blockptr_t* blockptr, const void* block) {
 
 // allocate new inodeptr only
 int alloc_inodeptr(inodeptr_t* inodeptr) {
-    super_block sb;
-    read_super_block(&sb);
+    super_block* sb = super_block_cache;
 
-    if (sb.free_inodes == 0) {
+    if (sb->free_inodes == 0) {
         printf("alloc_inodeptr: no free inode available\n");
         return -ENOSPC;
     }
@@ -102,16 +98,15 @@ int alloc_inodeptr(inodeptr_t* inodeptr) {
     }
 
     // update superblock
-    sb.free_inodes--;
-    write_super_block(&sb);
+    sb->free_inodes--;
+    super_block_cache_sync();
 
     return 0;
 }
 
 // allocate and write a new inode in place
 int alloc_inode(inodeptr_t* inodeptr, const inode_t* inode) {
-    super_block sb;
-    read_super_block(&sb);
+    const super_block* sb = super_block_cache;
 
     // get next free inode
     const int err = alloc_inodeptr(inodeptr);
@@ -122,7 +117,7 @@ int alloc_inode(inodeptr_t* inodeptr, const inode_t* inode) {
 
     // get inode table block
     const blockptr_t inode_table_offset = *inodeptr / INODE_BLOCK_ENTRIES;
-    const blockptr_t inode_table_blockptr = sb.inode_table + inode_table_offset;
+    const blockptr_t inode_table_blockptr = sb->inode_table + inode_table_offset;
     inode_block inode_table_block;
     read_block(inode_table_blockptr, &inode_table_block);
 

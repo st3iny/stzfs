@@ -53,7 +53,7 @@ struct fuse_operations stzfs_ops = {
 
 // init filesystem
 blockptr_t stzfs_makefs(inodeptr_t inode_count) {
-    blockptr_t blocks = vm_size() / STZFS_BLOCK_SIZE;
+    const blockptr_t blocks = vm_size() / STZFS_BLOCK_SIZE;
     printf("stzfs_makefs: creating file system with %i blocks and %i inodes\n", blocks, inode_count);
 
     // calculate bitmap and inode table lengths
@@ -81,7 +81,7 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     data_block initial_block;
     memset(&initial_block, 0, STZFS_BLOCK_SIZE);
     for (blockptr_t blockptr = 0; blockptr < initial_block_count; blockptr++) {
-        vm_write(blockptr * STZFS_BLOCK_SIZE, &initial_block, STZFS_BLOCK_SIZE);
+        write_block(blockptr, &initial_block);
     }
     printf("stzfs_makefs: wrote %i initial blocks\n", initial_block_count);
 
@@ -93,7 +93,7 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     memset(&ba, 0xff, STZFS_BLOCK_SIZE);
     blockptr_t initial_allocated_bitmap_blocks = initial_block_count / (STZFS_BLOCK_SIZE * 8);
     for (initial_bitmap_offset = 0; initial_bitmap_offset < initial_allocated_bitmap_blocks; initial_bitmap_offset++) {
-        vm_write((sb.block_bitmap + initial_bitmap_offset) * STZFS_BLOCK_SIZE, &ba, STZFS_BLOCK_SIZE);
+        write_block(sb.block_bitmap + initial_bitmap_offset, &ba);
     }
 
     // write partially filled bitmap block
@@ -102,15 +102,15 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     memset(&ba, 0xff, allocated_entries * 8);
     int shift_partial_entry = (initial_block_count % (STZFS_BLOCK_SIZE * 8)) % 64;
     ba.bitmap[allocated_entries] = (1UL << shift_partial_entry) - 1UL;
-    vm_write((sb.block_bitmap + initial_bitmap_offset) * STZFS_BLOCK_SIZE, &ba, STZFS_BLOCK_SIZE);
+    write_block(sb.block_bitmap + initial_bitmap_offset, &ba);
 
     // write initial inode bitmap
     bitmap_block first_inode_bitmap_block;
     memset(&first_inode_bitmap_block, 0, STZFS_BLOCK_SIZE);
     first_inode_bitmap_block.bitmap[0] = 1;
-    vm_write(sb.inode_bitmap * STZFS_BLOCK_SIZE, &first_inode_bitmap_block, STZFS_BLOCK_SIZE);
+    write_block(sb.inode_bitmap, &first_inode_bitmap_block);
 
-    // write superblock
+    // write superblock (can't use write_block here because of security limitations)
     vm_write(0, &sb, STZFS_BLOCK_SIZE);
 
     // init filesystem
@@ -549,13 +549,11 @@ int stzfs_mkdir(const char* path, mode_t mode) {
         return -EEXIST;
     }
 
-    super_block sb;
-    read_super_block(&sb);
-
-    if (sb.free_blocks == 0) {
+    const super_block* sb = super_block_cache;
+    if (sb->free_blocks == 0) {
         printf("stzfs_mkdir: no free block available\n");
         return -ENOSPC;
-    } else if (sb.free_inodes == 0) {
+    } else if (sb->free_inodes == 0) {
         printf("stzfs_mkdir: no free inode available\n");
         return -ENOSPC;
     }
@@ -670,16 +668,15 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
 
 // retrieve filesystem stats
 int stzfs_statfs(const char* path, struct statvfs* stat) {
-    super_block sb;
-    read_super_block(&sb);
+    const super_block* sb = super_block_cache;
 
     stat->f_bsize = STZFS_BLOCK_SIZE;
     stat->f_frsize = STZFS_BLOCK_SIZE;
-    stat->f_blocks = sb.block_count;
-    stat->f_bfree = sb.free_blocks;
-    stat->f_bavail = sb.free_blocks;
-    stat->f_files = sb.inode_count;
-    stat->f_ffree = sb.free_inodes;
+    stat->f_blocks = sb->block_count;
+    stat->f_bfree = sb->free_blocks;
+    stat->f_bavail = sb->free_blocks;
+    stat->f_files = sb->inode_count;
+    stat->f_ffree = sb->free_inodes;
     stat->f_namemax = MAX_FILENAME_LENGTH;
 
     return 0;

@@ -16,13 +16,6 @@ void write_block(blockptr_t blockptr, const void* block) {
     vm_write((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
 }
 
-// write super block to disk
-// FIXME: implement super block pointers everywhere
-void write_super_block(const super_block* block) {
-    *super_block_cache = *block;
-    super_block_cache_sync();
-}
-
 // write inode to disk
 void write_inode(inodeptr_t inodeptr, const inode_t* inode) {
     if (inodeptr == 0) {
@@ -30,17 +23,16 @@ void write_inode(inodeptr_t inodeptr, const inode_t* inode) {
         return;
     }
 
-    super_block sb;
-    read_super_block(&sb);
+    const super_block* sb = super_block_cache;
 
     blockptr_t table_block_offset = inodeptr / INODE_BLOCK_ENTRIES;
-    if (table_block_offset > sb.inode_table_length) {
+    if (table_block_offset > sb->inode_table_length) {
         printf("write_inode: inode index out of bounds\n");
         return;
     }
 
     // place inode in table and write back table block
-    blockptr_t table_blockptr = sb.inode_table + table_block_offset;
+    blockptr_t table_blockptr = sb->inode_table + table_block_offset;
     inode_block table_block;
     read_block(table_blockptr, &table_block);
     table_block.inodes[inodeptr % INODE_BLOCK_ENTRIES] = *inode;

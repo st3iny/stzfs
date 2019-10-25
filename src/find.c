@@ -8,12 +8,12 @@
 #include "find.h"
 #include "helpers.h"
 #include "read.h"
+#include "super_block_cache.h"
 
 // find the inode linked to given path
 int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
                     inodeptr_t* parent_inodeptr, inode_t* parent_inode, char* last_name) {
-    super_block sb;
-    read_super_block(&sb);
+    const super_block* sb = super_block_cache;
 
     // start at root inode
     *inodeptr = 1;

@@ -8,6 +8,7 @@
 #include "blocks.h"
 #include "helpers.h"
 #include "read.h"
+#include "super_block_cache.h"
 #include "types.h"
 #include "vm.h"
 
@@ -18,12 +19,11 @@ bitmap_cache_t block_bitmap_cache;
 bitmap_cache_t inode_bitmap_cache;
 
 int bitmap_cache_init(void) {
-    super_block sb;
-    read_super_block(&sb);
+    const super_block* sb = super_block_cache;
 
-    TRY(create_cache(&block_bitmap_cache, sb.block_bitmap, sb.block_bitmap_length),
+    TRY(create_cache(&block_bitmap_cache, sb->block_bitmap, sb->block_bitmap_length),
         printf("bitmap_cache_init: could not create block bitmap cache\n"));
-    TRY(create_cache(&inode_bitmap_cache, sb.inode_bitmap, sb.inode_bitmap_length),
+    TRY(create_cache(&inode_bitmap_cache, sb->inode_bitmap, sb->inode_bitmap_length),
         printf("bitmap_cache_init: could not create inode bitmap cache\n"));
 
     return 0;

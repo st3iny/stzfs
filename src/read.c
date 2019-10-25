@@ -20,25 +20,18 @@ void read_blocks(const blockptr_t* blockptrs, void* blocks, blockptr_t length) {
     }
 }
 
-// read super block from disk
-// FIXME: implement super block pointers everywhere
-void read_super_block(super_block* block) {
-    *block = *super_block_cache;
-}
-
 // read inode from disk
 void read_inode(inodeptr_t inodeptr, inode_t* inode) {
-    super_block sb;
-    read_super_block(&sb);
+    const super_block* sb = super_block_cache;
 
     blockptr_t inode_table_block_offset = inodeptr / (STZFS_BLOCK_SIZE / sizeof(inode_t));
-    if (inode_table_block_offset >= sb.inode_table_length) {
+    if (inode_table_block_offset >= sb->inode_table_length) {
         printf("read_inode: out of bounds while trying to read inode\n");
         return;
     }
 
     // get inode table block
-    blockptr_t inode_table_blockptr = sb.inode_table + inode_table_block_offset;
+    blockptr_t inode_table_blockptr = sb->inode_table + inode_table_block_offset;
     inode_block inode_table_block;
     read_block(inode_table_blockptr, &inode_table_block);
 
