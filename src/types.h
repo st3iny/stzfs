@@ -1,5 +1,5 @@
-#ifndef FILESYSTEM_TYPES_H
-#define FILESYSTEM_TYPES_H
+#ifndef STZFS_TYPES_H
+#define STZFS_TYPES_H
 
 #include <stdint.h>
 
@@ -44,4 +44,4 @@ typedef uint64_t bitmap_entry_t;
 // can safely store inode and block pointers
 typedef uint32_t objptr_t;
 
-#endif // FILESYSTEM_TYPES_H
+#endif // STZFS_TYPES_H

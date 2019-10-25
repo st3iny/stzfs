@@ -1,5 +1,5 @@
-#ifndef FILESYSTEM_UTILS_H
-#define FILESYSTEM_UTILS_H
+#ifndef STZFS_UTILS_H
+#define STZFS_UTILS_H
 
 int main(int argc, char** argv);
 
@@ -13,4 +13,4 @@ void utils_print_inode_table(const char* arg);
 void utils_print_block(const char* arg);
 void utils_print_inode(const char* arg);
 
-#endif // FILESYSTEM_UTILS_H
+#endif // STZFS_UTILS_H

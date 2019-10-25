@@ -1,5 +1,5 @@
-#ifndef FILESYSTEM_VM_H
-#define FILESYSTEM_VM_H
+#ifndef STZFS_VM_H
+#define STZFS_VM_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -22,4 +22,4 @@ off_t vm_size(void);
 // cleanup
 void vm_destroy(void);
 
-#endif // FILESYSTEM_VM_H
+#endif // STZFS_VM_H

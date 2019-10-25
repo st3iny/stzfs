@@ -1,5 +1,5 @@
-#ifndef FILESYSTEM_BLOCKS_H
-#define FILESYSTEM_BLOCKS_H
+#ifndef STZFS_BLOCKS_H
+#define STZFS_BLOCKS_H
 
 #include <stdint.h>
 
@@ -55,4 +55,4 @@ typedef struct data_block {
     uint8_t data[STZFS_BLOCK_SIZE];
 } data_block;
 
-#endif // FILESYSTEM_BLOCKS_H
+#endif // STZFS_BLOCKS_H

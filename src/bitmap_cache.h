@@ -1,5 +1,5 @@
-#ifndef FILESYSTEM_BITMAP_CACHE_H
-#define FILESYSTEM_BITMAP_CACHE_H
+#ifndef STZFS_BITMAP_CACHE_H
+#define STZFS_BITMAP_CACHE_H
 
 #include <stddef.h>
 
@@ -15,4 +15,4 @@ extern bitmap_cache_t block_bitmap_cache;
 int bitmap_cache_init(void);
 int bitmap_cache_dispose(void);
 
-#endif // FILESYSTEM_BITMAP_CACHE_H
+#endif // STZFS_BITMAP_CACHE_H
