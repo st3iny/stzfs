@@ -8,12 +8,13 @@
 #include "bitmap_cache.h"
 #include "blocks.h"
 #include "read.h"
-#include "vm.h"
 #include "write.h"
 
+static int alloc_bitmap(objptr_t* index, bitmap_cache_t* cache);
+
 // alloc entry in bitmap
-blockptr_t alloc_bitmap(bitmap_cache_t* cache) {
-    blockptr_t next_free = 0;
+static int alloc_bitmap(objptr_t* index, bitmap_cache_t* cache) {
+    objptr_t next_free = 0;
     for (size_t i = cache->next; i < cache->length && !next_free; i += sizeof(bitmap_entry_t)) {
         bitmap_entry_t* entry = (bitmap_entry_t*)(cache->bitmap + i);
         if (~*entry == 0) {
@@ -38,67 +39,98 @@ blockptr_t alloc_bitmap(bitmap_cache_t* cache) {
 
     if (!next_free) {
         printf("alloc_entry: could not allocate entry in bitmap\n");
+        return -ENOSPC;
     }
-    return next_free;
+
+    *index = next_free;
+    return 0;
 }
 
-// allocates and writes a new block in place
-int alloc_block(blockptr_t* blockptr, const void* block) {
+// allocate new blockptr only
+int alloc_blockptr(blockptr_t* blockptr) {
     super_block sb;
     read_super_block(&sb);
 
-    // get next free block and write data block
-    const blockptr_t free_block = alloc_bitmap(&block_bitmap_cache);
-    if (free_block == 0) {
-        printf("alloc_block: could not allocate block\n");
+    if (sb.free_blocks == 0) {
+        printf("alloc_blockptr: no free block available\n");
         return -ENOSPC;
     }
-    write_block(free_block, block);
+
+    const int err = alloc_bitmap((objptr_t*)blockptr, &block_bitmap_cache);
+    if (err) {
+        printf("alloc_blockptr: could not allocate blockptr\n");
+        return err;
+    }
 
     // update superblock
     sb.free_blocks--;
     write_super_block(&sb);
 
-    *blockptr = free_block;
     return 0;
 }
 
-// allocate a new inodeptr only
-// TODO: check free inodes (implement free inode counter in superblock)
-inodeptr_t alloc_inodeptr(void) {
+// allocate and write new block in place
+int alloc_block(blockptr_t* blockptr, const void* block) {
     super_block sb;
     read_super_block(&sb);
 
-    const inodeptr_t next_free_inode = alloc_bitmap(&inode_bitmap_cache);
-
-    if (!next_free_inode) {
-        printf("alloc_inodeptr: could not allocate inodeptr\n");
+    const int err = alloc_blockptr(blockptr);
+    if (err) {
+        printf("alloc_block: could not allocate block\n");
+        return err;
     }
-    return next_free_inode;
+
+    write_block(*blockptr, block);
+
+    return 0;
+}
+
+// allocate new inodeptr only
+int alloc_inodeptr(inodeptr_t* inodeptr) {
+    super_block sb;
+    read_super_block(&sb);
+
+    if (sb.free_inodes == 0) {
+        printf("alloc_inodeptr: no free inode available\n");
+        return -ENOSPC;
+    }
+
+    const int err = alloc_bitmap((objptr_t*)inodeptr, &inode_bitmap_cache);
+    if (err) {
+        printf("alloc_inodeptr: could not allocate inodeptr\n");
+        return err;
+    }
+
+    // update superblock
+    sb.free_inodes--;
+    write_super_block(&sb);
+
+    return 0;
 }
 
 // allocate and write a new inode in place
-inodeptr_t alloc_inode(const inode_t* new_inode) {
+int alloc_inode(inodeptr_t* inodeptr, const inode_t* inode) {
     super_block sb;
     read_super_block(&sb);
 
     // get next free inode
-    const inodeptr_t next_free_inode = alloc_inodeptr();
-    if (!next_free_inode) {
+    const int err = alloc_inodeptr(inodeptr);
+    if (err) {
         printf("alloc_inode: could not allocate inode\n");
-        return 0;
+        return err;
     }
 
     // get inode table block
-    blockptr_t inode_table_blockptr = sb.inode_table + next_free_inode / (STZFS_BLOCK_SIZE / sizeof(inode_t));
+    const blockptr_t inode_table_offset = *inodeptr / INODE_BLOCK_ENTRIES;
+    const blockptr_t inode_table_blockptr = sb.inode_table + inode_table_offset;
     inode_block inode_table_block;
-    vm_read(inode_table_blockptr * STZFS_BLOCK_SIZE, &inode_table_block, STZFS_BLOCK_SIZE);
+    read_block(inode_table_blockptr, &inode_table_block);
 
     // place inode into table and write table block
-    inode_table_block.inodes[next_free_inode % (STZFS_BLOCK_SIZE / sizeof(inode_t))] = *new_inode;
-    vm_write(inode_table_blockptr * STZFS_BLOCK_SIZE, &inode_table_block, STZFS_BLOCK_SIZE);
+    inode_table_block.inodes[*inodeptr % INODE_BLOCK_ENTRIES] = *inode;
+    write_block(inode_table_blockptr, &inode_table_block);
 
-    return next_free_inode;
+    return 0;
 }
 
 // alloc a new data block for an inode

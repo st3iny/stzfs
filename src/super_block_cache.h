@@ -1,5 +1,5 @@
-#ifndef FILESYSTEM_SUPERBLOCK_CACHE_H
-#define FILESYSTEM_SUPERBLOCK_CACHE_H
+#ifndef FILESYSTEM_SUPER_BLOCK_CACHE_H
+#define FILESYSTEM_SUPER_BLOCK_CACHE_H
 
 #include "blocks.h"
 
@@ -9,4 +9,4 @@ int super_block_cache_init(void);
 int super_block_cache_dispose(void);
 int super_block_cache_sync(void);
 
-#endif // FILESYSTEM_SUPERBLOCK_CACHE_H
+#endif // FILESYSTEM_SUPER_BLOCK_CACHE_H

@@ -141,7 +141,8 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     root_inode.data_direct[0] = root_dir_block_ptr;
 
     // write root inode
-    inodeptr_t root_inode_ptr = alloc_inode(&root_inode);
+    inodeptr_t root_inode_ptr;
+    alloc_inode(&root_inode_ptr, &root_inode);
     printf("stzfs_makefs: wrote root inode with id %i\n", root_inode_ptr);
 
     return blocks;
@@ -428,7 +429,7 @@ int stzfs_create(const char* file_path, mode_t mode, struct fuse_file_info* file
     inode.ctime = now;
     inode.link_count = 1;
 
-    inodeptr = alloc_inode(&inode);
+    alloc_inode(&inodeptr, &inode);
     alloc_dir_entry(&parent_inode, last_name, inodeptr);
     write_inode(parent_inodeptr, &parent_inode);
 
@@ -531,8 +532,14 @@ int stzfs_unlink(const char* path) {
 int stzfs_mkdir(const char* path, mode_t mode) {
     char name[MAX_FILENAME_LENGTH];
     file dir, parent;
-    int err = find_file_inode2(path, &dir, &parent, name);
-    if (err) return err;
+
+    {
+        const int err = find_file_inode2(path, &dir, &parent, name);
+        if (err) {
+            printf("stzfs_mkdir: could not find parent directory inode\n");
+            return err;
+        }
+    }
 
     if (parent.inodeptr == 0) {
         printf("stzfs_mkdir: parent not existing\n");
@@ -556,16 +563,31 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     // update timestamps
     touch_mtime_and_ctime(&parent.inode);
 
-    // allocate inode in bitmap
-    dir.inodeptr = alloc_inodeptr();
+    // allocate new inode
+    {
+        const int err = alloc_inodeptr(&dir.inodeptr);
+        if (err) {
+            printf("stzfs_mkdir: could not allocate directory inode\n");
+            return err;
+        }
+    }
+
+    // allocate new block
+    blockptr_t blockptr;
+    {
+        const int err = alloc_blockptr(&blockptr);
+        if (err) {
+            printf("stzfs_mkdir: could not allocate directory block\n");
+            return err;
+        }
+    }
 
     // allocate and write directory block
     dir_block block;
     memset(&block, 0, STZFS_BLOCK_SIZE);
     block.entries[0] = (dir_block_entry) {.name = ".", .inode=dir.inodeptr};
     block.entries[1] = (dir_block_entry) {.name = "..", .inode=parent.inodeptr};
-    blockptr_t blockptr;
-    alloc_block(&blockptr, &block);
+    write_block(blockptr, &block);
 
     // TODO: check inode bounds
     // increase parent inode link counter
@@ -834,7 +856,7 @@ int stzfs_symlink(const char* target, const char* link_name) {
     symlink.inode.ctime = now;
     symlink.inode.link_count = 1;
 
-    symlink.inodeptr = alloc_inode(&symlink.inode);
+    alloc_inode(&symlink.inodeptr, &symlink.inode);
     alloc_dir_entry(&symlink_parent.inode, symlink_last_name, symlink.inodeptr);
     write_inode(symlink_parent.inodeptr, &symlink_parent.inode);
 
