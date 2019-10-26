@@ -50,7 +50,7 @@ typedef struct bitmap_block {
 } bitmap_block;
 
 typedef struct data_block {
-    uint8_t data[STZFS_BLOCK_SIZE];
+    int8_t data[STZFS_BLOCK_SIZE];
 } data_block;
 
 #endif // STZFS_BLOCKS_H

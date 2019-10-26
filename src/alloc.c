@@ -12,6 +12,7 @@
 #include "write.h"
 
 static int alloc_bitmap(objptr_t* index, bitmap_cache_t* cache);
+static void alloc_inode_data_blockptr(inode_t* inode, blockptr_t blockptr);
 
 // alloc entry in bitmap
 static int alloc_bitmap(objptr_t* index, bitmap_cache_t* cache) {
@@ -142,13 +143,8 @@ int alloc_inode(inodeptr_t* inodeptr, const inode_t* inode) {
     return 0;
 }
 
-// alloc a new data block for an inode
-blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
-    if (inode->block_count >= INODE_MAX_BLOCKS) {
-        printf("alloc_inode_data_block: inode has reached max block count\n");
-        return 0;
-    }
-
+// append blockptr to inode block list
+static void alloc_inode_data_blockptr(inode_t* inode, blockptr_t blockptr) {
     // level struct for indirection convenience
     typedef struct level {
         blockptr_t* blockptr;
@@ -156,13 +152,7 @@ blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
         bool changed;
     } level;
 
-    // alloc data block
-    blockptr_t blockptr;
-    alloc_block(&blockptr, block);
-    inode->block_count++;
-
-    // handle indirection
-    blockptr_t offset = inode->block_count - 1;
+    blockptr_t offset = inode->block_count;
     if (offset < INODE_DIRECT_BLOCKS) {
         inode->data_direct[offset] = blockptr;
     } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
@@ -227,7 +217,41 @@ blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
         write_block(*level3.blockptr, &level3.block);
     }
 
+    inode->block_count++;
+}
+
+// alloc a new data block for an inode
+blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
+    if (inode->block_count >= INODE_MAX_BLOCKS) {
+        printf("alloc_inode_data_block: inode has reached max block count\n");
+        return 0;
+    }
+
+    // alloc data block
+    blockptr_t blockptr;
+    alloc_block(&blockptr, block);
+
+    // append to inode block list
+    alloc_inode_data_blockptr(inode, blockptr);
+
     return blockptr;
+}
+
+// alloc new inode null blocks and truncate inode to block_count
+int alloc_inode_null_blocks(inode_t* inode, blockptr_t block_count) {
+    if (block_count > BLOCKPTR_MAX) {
+        printf("alloc_inode_null_blocks: new block count out of bounds\n");
+        return -EFBIG;
+    } else if (block_count < inode->block_count) {
+        printf("alloc_inode_null_blocks: new block count smaller than current inode block count\n");
+        return -EINVAL;
+    }
+
+    for (blockptr_t i = inode->block_count; i < block_count; i++) {
+        alloc_inode_data_blockptr(inode, NULL_BLOCKPTR);
+    }
+
+    return 0;
 }
 
 // alloc an entry in a directory inode

@@ -11,10 +11,14 @@
 void read_block(blockptr_t blockptr, void* block) {
     if (blockptr == SUPER_BLOCKPTR) {
         printf("read_block: trying to read protected super block\n");
-    } else if (blockptr == NULL_BLOCKPTR) {
-        printf("read_block: trying to read null block\n");
+        return;
     } else if (blockptr > BLOCKPTR_MAX) {
         printf("read_block: blockptr out of bounds\n");
+        return;
+    }
+
+    if (blockptr == NULL_BLOCKPTR) {
+        memset(block, 0, STZFS_BLOCK_SIZE);
     } else {
         vm_read((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
     }
@@ -47,8 +51,8 @@ void read_inode(inodeptr_t inodeptr, inode_t* inode) {
 }
 
 // read inode data block with relative offset
-blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* block) {
-    blockptr_t blockptr = find_inode_data_blockptr(inode, offset);
+blockptr_t read_inode_data_block(inode_t* inode, blockptr_t offset, void* block) {
+    blockptr_t blockptr = find_inode_data_blockptr(inode, offset, ALLOC_SPARSE_NO);
     if (blockptr == 0) {
         printf("read_inode_data_block: could not read inode data block\n");
         return 0;
@@ -59,7 +63,7 @@ blockptr_t read_inode_data_block(const inode_t* inode, blockptr_t offset, void* 
 }
 
 // read data blocks of an inode and store them to a buffer
-int read_inode_data_blocks(const inode_t* inode, void* data_block_array, blockptr_t length,
+int read_inode_data_blocks(inode_t* inode, void* data_block_array, blockptr_t length,
                            blockptr_t offset) {
     blockptr_t blockptrs[length];
     int err = find_inode_data_blockptrs(inode, blockptrs, length, offset);

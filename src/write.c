@@ -48,8 +48,8 @@ void write_inode(inodeptr_t inodeptr, const inode_t* inode) {
 }
 
 // read inode data block with relative offset
-blockptr_t write_inode_data_block(const inode_t* inode, blockptr_t offset, const void* block) {
-    blockptr_t blockptr = find_inode_data_blockptr(inode, offset);
+blockptr_t write_inode_data_block(inode_t* inode, blockptr_t offset, const void* block) {
+    blockptr_t blockptr = find_inode_data_blockptr(inode, offset, ALLOC_SPARSE_YES);
     if (blockptr == 0) {
         printf("write_inode_data_block: could not write inode data block\n");
         return 0;
@@ -72,7 +72,7 @@ int write_or_alloc_inode_data_block(inode_t* inode, blockptr_t blockptr, const v
 }
 
 // replace inodeptr of name in directory
-int write_dir_entry(const inode_t* inode, const char* name, inodeptr_t target_inodeptr) {
+int write_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr) {
     if ((inode->mode & M_DIR) == 0) {
         printf("write_dir_entry: not a directory\n");
         return -ENOTDIR;

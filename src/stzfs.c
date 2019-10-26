@@ -80,7 +80,8 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     // initialize all bitmaps and inode table with zeroes
     data_block initial_block;
     memset(&initial_block, 0, STZFS_BLOCK_SIZE);
-    for (blockptr_t blockptr = 0; blockptr < initial_block_count; blockptr++) {
+    vm_write(0, &initial_block, STZFS_BLOCK_SIZE);
+    for (blockptr_t blockptr = 1; blockptr < initial_block_count; blockptr++) {
         write_block(blockptr, &initial_block);
     }
     printf("stzfs_makefs: wrote %i initial blocks\n", initial_block_count);
@@ -273,13 +274,14 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
     touch_atime(&inode);
     write_inode(inodeptr, &inode);
 
-    // read first partial block
     size_t read_bytes = 0;
-    blockptr_t initial_offset = offset / STZFS_BLOCK_SIZE;
-    size_t initial_byte_offset = offset % STZFS_BLOCK_SIZE;
+    blockptr_t blockptr = offset / STZFS_BLOCK_SIZE;
+
+    // read first partial block
+    const size_t initial_byte_offset = offset % STZFS_BLOCK_SIZE;
     if (initial_byte_offset > 0) {
         data_block block;
-        read_inode_data_block(&inode, initial_offset, &block);
+        read_inode_data_block(&inode, blockptr, &block);
 
         // keep block boundaries
         read_bytes = STZFS_BLOCK_SIZE - initial_byte_offset;
@@ -288,24 +290,22 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
         }
         memcpy(buffer, &block.data[initial_byte_offset], read_bytes);
 
-        initial_offset++;
+        blockptr++;
     }
 
-    size_t max_bytes = inode.atom_count < length ? inode.atom_count : length;
-    for (blockptr_t block_offset = initial_offset; block_offset < inode.block_count; block_offset++) {
-        data_block block;
-        read_inode_data_block(&inode, block_offset, &block);
+    // read full blocks
+    for (; (length - read_bytes) >= STZFS_BLOCK_SIZE; blockptr++) {
+        read_inode_data_block(&inode, blockptr, &buffer[read_bytes]);
+        read_bytes += STZFS_BLOCK_SIZE;
+    }
 
-        size_t diff = max_bytes - read_bytes;
-        if (diff <= 0) {
-            break;
-        } else if (diff > 0 && diff < STZFS_BLOCK_SIZE) {
-            memcpy(&buffer[read_bytes], &block, diff);
-            read_bytes += diff;
-        } else {
-            memcpy(&buffer[read_bytes], &block, STZFS_BLOCK_SIZE);
-            read_bytes += STZFS_BLOCK_SIZE;
-        }
+    // read last partial block
+    const size_t diff = length - read_bytes;
+    if (diff > 0) {
+        data_block block;
+        read_inode_data_block(&inode, blockptr, &block);
+        memcpy(&buffer[read_bytes], &block, diff);
+        read_bytes += diff;
     }
 
     return read_bytes;
@@ -329,7 +329,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     read_inode(inodeptr, &inode);
 
     // check file size limits
-    const uint64_t new_atom_count = MAX(offset + length, inode.atom_count);
+    const off_t new_atom_count = MAX(offset + length, inode.atom_count);
     const blockptr_t new_block_count = DIV_CEIL(new_atom_count, STZFS_BLOCK_SIZE);
     if (new_block_count > INODE_MAX_BLOCKS) {
         printf("stzfs_write: max file size exceeded\n");
@@ -349,10 +349,8 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     size_t written_bytes = 0;
 
     // write first partial block
-    const blockptr_t first_blockptr = offset / STZFS_BLOCK_SIZE;
-    const blockptr_t last_blockptr = new_block_count - 1;
     const size_t initial_byte_offset = offset % STZFS_BLOCK_SIZE;
-    blockptr_t blockptr = first_blockptr;
+    blockptr_t blockptr = offset / STZFS_BLOCK_SIZE;
     if (initial_byte_offset > 0) {
         data_block block;
         if (blockptr >= inode.block_count) {
@@ -373,7 +371,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     }
 
     // write aligned full blocks
-    for (; blockptr < new_block_count && (length - written_bytes) >= STZFS_BLOCK_SIZE; blockptr++) {
+    for (; (length - written_bytes) >= STZFS_BLOCK_SIZE; blockptr++) {
         write_or_alloc_inode_data_block(&inode, blockptr, &buffer[written_bytes]);
         written_bytes += STZFS_BLOCK_SIZE;
     }
@@ -382,19 +380,18 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     const size_t diff = length - written_bytes;
     if (diff > 0) {
         data_block block;
-
-        if (last_blockptr < inode.block_count) {
-            read_inode_data_block(&inode, last_blockptr, &block);
+        if (blockptr < inode.block_count) {
+            read_inode_data_block(&inode, blockptr, &block);
         } else {
             memset(&block.data[diff], 0, STZFS_BLOCK_SIZE - diff);
         }
 
         memcpy(&block, &buffer[written_bytes], diff);
-        write_or_alloc_inode_data_block(&inode, last_blockptr, &block);
+        write_or_alloc_inode_data_block(&inode, blockptr, &block);
         written_bytes += diff;
     }
 
-    inode.atom_count += length;
+    inode.atom_count = new_atom_count;
     write_inode(inodeptr, &inode);
 
     return written_bytes;
@@ -748,21 +745,27 @@ int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
         return -ENOENT;
     }
 
-    if (offset > f.inode.atom_count) {
-        printf("stzfs_truncate: offset out of bounds\n");
-        return -EPERM;
+    if ((off_t)DIV_CEIL(offset, STZFS_BLOCK_SIZE) > BLOCKPTR_MAX) {
+        printf("stzfs_truncate: sparse file block count would exceed maximum inode block count\n");
+        return -EFBIG;
     }
 
-    if (offset != f.inode.atom_count) {
-        f.inode.atom_count = offset;
+    const blockptr_t new_block_count = DIV_CEIL(offset, STZFS_BLOCK_SIZE);
+
+    if (offset > f.inode.atom_count) {
+        alloc_inode_null_blocks(&f.inode, new_block_count);
+    } else if (offset < f.inode.atom_count) {
+        if (new_block_count < f.inode.block_count) {
+            free_inode_data_blocks(&f.inode, new_block_count);
+        }
         touch_mtime_and_ctime(&f.inode);
     }
 
-    blockptr_t block_offset = DIV_CEIL(offset, STZFS_BLOCK_SIZE);
-    if (block_offset < f.inode.block_count) {
-        free_inode_data_blocks(&f.inode, block_offset);
+    if (f.inode.block_count != new_block_count) {
+        printf("stzfs_truncate: invalid block count after truncate\n");
     }
 
+    f.inode.atom_count = offset;
     touch_atime(&f.inode);
     write_inode(f.inodeptr, &f.inode);
 
