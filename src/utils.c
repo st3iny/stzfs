@@ -71,6 +71,7 @@ void utils_print_superblock(const char* arg) {
     printf("super_block = {\n");
     printf("\tblock_count = %i\n", sb->block_count);
     printf("\tfree_blocks = %i\n", sb->free_blocks);
+    printf("\tfree_inodes = %i\n", sb->free_inodes);
     printf("\tblock_bitmap = %i\n", sb->block_bitmap);
     printf("\tblock_bitmap_length = %i\n", sb->block_bitmap_length);
     printf("\tinode_bitmap = %i\n", sb->inode_bitmap);
@@ -158,7 +159,12 @@ void utils_print_inode(const char* arg) {
 
     printf("\tdata_direct = [");
     for (int i = 0; i < INODE_DIRECT_BLOCKS; i++) {
-        printf("%u", inode_data->data_direct[i]);
+        const blockptr_t blockptr = inode_data->data_direct[i];
+        if (blockptr == NULL_BLOCKPTR) {
+            printf("NULL");
+        } else {
+            printf("%u", blockptr);
+        }
         if (i < INODE_DIRECT_BLOCKS - 1) {
             printf(", ");
         }
