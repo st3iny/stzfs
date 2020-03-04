@@ -12,7 +12,7 @@ void read_block(blockptr_t blockptr, void* block) {
     if (blockptr == SUPER_BLOCKPTR) {
         printf("read_block: trying to read protected super block\n");
         return;
-    } else if (blockptr > BLOCKPTR_MAX) {
+    } else if (blockptr > BLOCKPTR_MAX && blockptr != NULL_BLOCKPTR) {
         printf("read_block: blockptr out of bounds\n");
         return;
     }

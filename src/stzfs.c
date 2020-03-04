@@ -336,10 +336,18 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
         return -EFBIG;
     }
 
-    // check continuity
-    if (offset > inode.atom_count) {
-        printf("stzfs_write: offset too high\n");
-        return -EPERM;
+    // allocate null blocks to the new end of the file
+    if (new_block_count > inode.block_count) {
+        alloc_inode_null_blocks(&inode, new_block_count);
+    }
+
+    // fill previous last block with zeroes
+    const size_t last_block_inner_offset = inode.atom_count % STZFS_BLOCK_SIZE;
+    if (offset > inode.atom_count && last_block_inner_offset > 0) {
+        data_block block;
+        read_inode_data_block(&inode, inode.block_count - 1, &block);
+        memset(&block.data[last_block_inner_offset], 0, STZFS_BLOCK_SIZE - last_block_inner_offset);
+        write_inode_data_block(&inode, inode.block_count - 1, &block);
     }
 
     // update timestamps
@@ -353,11 +361,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     blockptr_t blockptr = offset / STZFS_BLOCK_SIZE;
     if (initial_byte_offset > 0) {
         data_block block;
-        if (blockptr >= inode.block_count) {
-            memset(&block, 0, STZFS_BLOCK_SIZE);
-        } else {
-            read_inode_data_block(&inode, blockptr, &block);
-        }
+        read_inode_data_block(&inode, blockptr, &block);
 
         // keep block boundaries
         written_bytes = STZFS_BLOCK_SIZE - initial_byte_offset;
@@ -366,13 +370,13 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
         }
 
         memcpy(&block.data[initial_byte_offset], buffer, written_bytes);
-        write_or_alloc_inode_data_block(&inode, blockptr, &block);
+        write_inode_data_block(&inode, blockptr, &block);
         blockptr++;
     }
 
     // write aligned full blocks
     for (; (length - written_bytes) >= STZFS_BLOCK_SIZE; blockptr++) {
-        write_or_alloc_inode_data_block(&inode, blockptr, &buffer[written_bytes]);
+        write_inode_data_block(&inode, blockptr, &buffer[written_bytes]);
         written_bytes += STZFS_BLOCK_SIZE;
     }
 
@@ -380,14 +384,10 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     const size_t diff = length - written_bytes;
     if (diff > 0) {
         data_block block;
-        if (blockptr < inode.block_count) {
-            read_inode_data_block(&inode, blockptr, &block);
-        } else {
-            memset(&block.data[diff], 0, STZFS_BLOCK_SIZE - diff);
-        }
+        read_inode_data_block(&inode, blockptr, &block);
 
         memcpy(&block, &buffer[written_bytes], diff);
-        write_or_alloc_inode_data_block(&inode, blockptr, &block);
+        write_inode_data_block(&inode, blockptr, &block);
         written_bytes += diff;
     }
 
