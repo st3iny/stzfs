@@ -25,11 +25,11 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
     if (strcmp(file_path, "/") == 0 ) {
         if (parent_inodeptr) *parent_inodeptr = 0;
         if (parent_inode) memset(parent_inode, 0, sizeof(inode_t));
-        if (last_name) last_name = strdup("/");
+        if (last_name) strcpy(last_name, "/");
         return 0;
     }
 
-    int not_existing = 0;
+    bool not_existing = false;
     char full_name[2048];
     strcpy(full_name, file_path);
     char* name = strtok(full_name, "/");
@@ -60,7 +60,7 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
                 read_inode(*inodeptr, inode);
             } else {
                 // if this is the last level a new file is allowed
-                not_existing = 1;
+                not_existing = true;
             }
         }
     } while((name = strtok(NULL, "/")) != NULL);
