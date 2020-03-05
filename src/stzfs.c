@@ -27,6 +27,14 @@
 // show .. entry in root dir
 #define STZFS_SHOW_DOUBLE_DOTS_IN_ROOT_DIR 1
 
+// debug print macro
+#define ENABLE_DEBUG 1
+#if ENABLE_DEBUG
+#define STZFS_DEBUG(args...) printf("%s(", __FUNCTION__); printf(args); printf(")\n");
+#else
+#define STZFS_DEBUG()
+#endif
+
 // fuse operations
 struct fuse_operations stzfs_ops = {
     .init = stzfs_fuse_init,
@@ -179,6 +187,8 @@ void stzfs_destroy(void) {
 
 // get file stats
 int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file_info) {
+    STZFS_DEBUG("path=%s", path);
+
     // TODO: reuse inode
     if (!file_exists(path)) {
         // spams stdout
@@ -219,6 +229,8 @@ int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file
 
 // open existing file
 int stzfs_open(const char* file_path, struct fuse_file_info* file_info) {
+    STZFS_DEBUG("path=%s", file_path);
+
     inodeptr_t inodeptr, parent_inodeptr;
     inode_t inode, parent_inode;
     int err = find_file_inode(file_path, &inodeptr, &inode, &parent_inodeptr, &parent_inode, NULL);
@@ -245,6 +257,8 @@ int stzfs_open(const char* file_path, struct fuse_file_info* file_info) {
 // read from a file
 int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
                struct fuse_file_info* file_info) {
+    STZFS_DEBUG("path=%s, length=%zu, offset=%lld", file_path, length, offset);
+
     if (length == 0)  {
         printf("stzfs_read: zero length read\n");
         return 0;
@@ -314,6 +328,8 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
 // write to a file
 int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t offset,
                 struct fuse_file_info* file_info) {
+    STZFS_DEBUG("p=%s, l=%zu, o=%lld", file_path, length, offset);
+
     if (length == 0)  {
         printf("stzfs_write: zero length write\n");
         return 0;
@@ -399,6 +415,8 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
 
 // create new file and open it
 int stzfs_create(const char* file_path, mode_t mode, struct fuse_file_info* file_info) {
+    STZFS_DEBUG("path=%s", file_path);
+
     inodeptr_t inodeptr, parent_inodeptr;
     inode_t inode, parent_inode;
     char last_name[2048];
@@ -436,6 +454,8 @@ int stzfs_create(const char* file_path, mode_t mode, struct fuse_file_info* file
 
 // rename a file
 int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags) {
+    STZFS_DEBUG("src_path=%s, dst_path=%s", src_path, dst_path);
+
     // TODO: improve me (use inodes and ptrs)
     int src_exists = file_exists(src_path);
     int dst_exists = file_exists(dst_path);
@@ -522,11 +542,15 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
 
 // unlink a file
 int stzfs_unlink(const char* path) {
+    STZFS_DEBUG("path=%s", path);
+
     return unlink_file_or_dir(path, 0);
 }
 
 // create a new directory
 int stzfs_mkdir(const char* path, mode_t mode) {
+    STZFS_DEBUG("path=%s", path);
+
     char name[MAX_FILENAME_LENGTH];
     file dir, parent;
 
@@ -615,6 +639,8 @@ int stzfs_mkdir(const char* path, mode_t mode) {
 
 // remove an empty directory
 int stzfs_rmdir(const char* path) {
+    STZFS_DEBUG("path=%s", path);
+
     // TODO: check root directory? fuse relative or absolute path?
     return unlink_file_or_dir(path, 1);
 }
@@ -622,6 +648,8 @@ int stzfs_rmdir(const char* path) {
 // read the contents of a directory
 int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t offset,
                   struct fuse_file_info* file_info, enum fuse_readdir_flags flags) {
+    STZFS_DEBUG("path=%s, offset=%lld", path, offset);
+
     if (!file_exists(path)) {
         printf("stzfs_readdir: no such directory\n");
         return -ENOENT;
@@ -665,6 +693,8 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
 
 // retrieve filesystem stats
 int stzfs_statfs(const char* path, struct statvfs* stat) {
+    STZFS_DEBUG("path=%s", path);
+
     const super_block* sb = super_block_cache;
 
     stat->f_bsize = STZFS_BLOCK_SIZE;
@@ -681,6 +711,8 @@ int stzfs_statfs(const char* path, struct statvfs* stat) {
 
 // change file owner
 int stzfs_chown(const char* path, uid_t uid, gid_t gid, struct fuse_file_info* fi) {
+    STZFS_DEBUG("path=%s, uid=%u, gid=%u", path, uid, gid);
+
     file f;
     if (fi == NULL) {
         find_file_inode2(path, &f, NULL, NULL);
@@ -707,6 +739,8 @@ int stzfs_chown(const char* path, uid_t uid, gid_t gid, struct fuse_file_info* f
 
 // change file permissions
 int stzfs_chmod(const char* path, mode_t mode, struct fuse_file_info* fi) {
+    STZFS_DEBUG("path=%s", path);
+
     file f;
     if (fi == NULL) {
         find_file_inode2(path, &f, NULL, NULL);
@@ -732,6 +766,8 @@ int stzfs_chmod(const char* path, mode_t mode, struct fuse_file_info* fi) {
 
 // truncate file
 int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
+    STZFS_DEBUG("path=%s, offset=%lld", path, offset);
+
     file f;
     if (fi == NULL) {
         find_file_inode2(path, &f, NULL, NULL);
@@ -774,6 +810,8 @@ int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
 
 // change access and modification times of a file
 int stzfs_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info* fi) {
+    STZFS_DEBUG("path=%s", path);
+
     file f;
     if (fi == NULL) {
         find_file_inode2(path, &f, NULL, NULL);
@@ -798,6 +836,8 @@ int stzfs_utimens(const char* path, const struct timespec tv[2], struct fuse_fil
 // create a hard link to a file
 // TODO: improve me
 int stzfs_link(const char* src, const char* dest) {
+    STZFS_DEBUG("src=%s, dest=%s", src, dest);
+
     if (!file_exists(src)) {
         printf("stzfs_link: no such file\n");
         return -ENOENT;
@@ -831,6 +871,8 @@ int stzfs_link(const char* src, const char* dest) {
 
 // create symbolic link
 int stzfs_symlink(const char* target, const char* link_name) {
+    STZFS_DEBUG("target=%s, link_name=%s", target, link_name);
+
     if (file_exists(link_name)) {
         printf("stzfs_symlink: link name already existing\n");
         return -EEXIST;
@@ -879,6 +921,8 @@ int stzfs_symlink(const char* target, const char* link_name) {
 
 // read symbolic link target
 int stzfs_readlink(const char* path, char* buffer, size_t length) {
+    STZFS_DEBUG("path=%s", path);
+
     if (!file_exists(path)) {
         printf("stzfs_readlink: no such file\n");
         return -ENOENT;
