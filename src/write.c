@@ -73,7 +73,7 @@ int write_or_alloc_inode_data_block(inode_t* inode, blockptr_t blockptr, const v
 
 // replace inodeptr of name in directory
 int write_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr) {
-    if ((inode->mode & M_DIR) == 0) {
+    if (!M_IS_DIR(inode->mode)) {
         printf("write_dir_entry: not a directory\n");
         return -ENOTDIR;
     }

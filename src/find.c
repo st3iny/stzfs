@@ -40,7 +40,7 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
             // there is a non existing directory in path
             printf("find_file_inode: no such file or directory\n");
             return -ENOENT;
-        } else if ((inode->mode & M_DIR) == 0) {
+        } else if (!M_IS_DIR(inode->mode)) {
             // a file is being treated like a directory
             printf("find_file_inode: expected directory, got file in path\n");
             return -ENOTDIR;
@@ -85,7 +85,7 @@ int find_file_inode2(const char* file_path, file* f, file* parent, char* last_na
 
 // find name in directory inode
 int find_name(const char* name, inode_t* inode, inodeptr_t* found_inodeptr) {
-    if (inode->mode & M_DIR == 0) {
+    if (!M_IS_DIR(inode->mode)) {
         printf("find_name: inode is not a directory\n");
         return -ENOTDIR;
     }

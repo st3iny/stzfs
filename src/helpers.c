@@ -56,10 +56,10 @@ int unlink_file_or_dir(const char* path, int allow_dir) {
     if (f.inodeptr == 0) {
         printf("unlink_file_or_dir: no such file or directory\n");
         return -ENOENT;
-    } else if ((f.inode.mode & M_DIR) && !allow_dir) {
+    } else if (M_IS_DIR(f.inode.mode) && !allow_dir) {
         printf("unlink_file_or_dir: is a directory\n");
         return -EISDIR;
-    } else if ((f.inode.mode & M_DIR) && f.inode.atom_count > 2) {
+    } else if (M_IS_DIR(f.inode.mode) && f.inode.atom_count > 2) {
         printf("unlink_file_or_dir: directory is not empty\n");
         return -ENOTEMPTY;
     }
@@ -69,7 +69,7 @@ int unlink_file_or_dir(const char* path, int allow_dir) {
     touch_ctime(&f.inode);
     touch_mtime_and_ctime(&parent.inode);
 
-    if ((f.inode.mode & M_DIR)) {
+    if (M_IS_DIR(f.inode.mode)) {
         parent.inode.link_count--;
     }
 

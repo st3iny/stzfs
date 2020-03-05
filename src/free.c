@@ -33,13 +33,13 @@ int free_inode(inodeptr_t inodeptr, inode_t* inode) {
     if (inodeptr <= 1) {
         printf("free_inode: trying to free protected inode\n");
         return -EFAULT;
-    } else if ((inode->mode & M_DIR) && inode->atom_count > 2) {
+    } else if (M_IS_DIR(inode->mode) && inode->atom_count > 2) {
         printf("free_inode: directory is not empty\n");
         return -ENOTEMPTY;
-    } else if ((inode->mode & M_DIR) && inode->link_count > 1) {
+    } else if (M_IS_DIR(inode->mode) && inode->link_count > 1) {
         printf("free_inode: directory inode link count too high\n");
         return -EPERM;
-    } else if ((inode->mode & M_DIR) == 0 && inode->link_count > 0) {
+    } else if (!M_IS_DIR(inode->mode) && inode->link_count > 0) {
         printf("free_inode: file inode link count too high\n");
         return -EPERM;
     }
@@ -157,7 +157,7 @@ int free_bitmap(bitmap_cache_t* cache, objptr_t index) {
 
 // free entry from directory
 int free_dir_entry(inode_t* inode, const char* name) {
-    if ((inode->mode & M_DIR) == 0) {
+    if (!M_IS_DIR(inode->mode)) {
         printf("free_dir_entry: not a directory\n");
         return -ENOTDIR;
     } else if (strcmp(name, ".") == 0) {

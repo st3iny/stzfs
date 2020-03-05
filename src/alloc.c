@@ -263,7 +263,7 @@ int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr
     } else if (inode->link_count >= 0xfffe) {
         printf("alloc_dir_entry: max link count reached\n");
         return -EMLINK;
-    } else if ((inode->mode & M_DIR) == 0) {
+    } else if (!M_IS_DIR(inode->mode)) {
         printf("alloc_dir_entry: not a directory\n");
         return -ENOTDIR;
     }

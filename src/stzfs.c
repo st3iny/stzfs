@@ -190,7 +190,7 @@ int stzfs_getattr(const char* path, struct stat* st, struct fuse_file_info* file
     int err = find_file_inode2(path, &f, NULL, NULL);
     if (err) return err;
 
-    if ((f.inode.mode & M_DIR)) {
+    if (M_IS_DIR(f.inode.mode)) {
         st->st_size = f.inode.atom_count * sizeof(dir_block_entry);
     } else {
         st->st_size = f.inode.atom_count;
@@ -227,7 +227,7 @@ int stzfs_open(const char* file_path, struct fuse_file_info* file_info) {
     if (inodeptr == 0) {
         printf("stzfs_open: no such file\n");
         return -ENOENT;
-    } else if (inode.mode & M_DIR) {
+    } else if (M_IS_DIR(inode.mode)) {
         printf("stzfs_open: is a directory\n");
         return -EISDIR;
     }
@@ -260,7 +260,7 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
     read_inode(inodeptr, &inode);
 
     // check file bounds
-    if (inode.mode & M_DIR) {
+    if (M_IS_DIR(inode.mode)) {
         printf("stzfs_read: is a directory\n");
         return -EISDIR;
     }
@@ -498,7 +498,7 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
     }
 
     // rewrite double dot inodeptr
-    if ((src.inode.mode & M_DIR) && src_parent.inodeptr != dst_parent.inodeptr) {
+    if (M_IS_DIR(src.inode.mode) && src_parent.inodeptr != dst_parent.inodeptr) {
         dst_parent.inode.link_count++;
         write_inode(dst_parent.inodeptr, &dst_parent.inode);
 
@@ -630,7 +630,7 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
     file dir;
     find_file_inode2(path, &dir, NULL, NULL);
 
-    if ((dir.inode.mode & M_DIR) == 0) {
+    if (!M_IS_DIR(dir.inode.mode)) {
         printf("stzfs_readdir: not a directory\n");
         return -ENOTDIR;
     }
