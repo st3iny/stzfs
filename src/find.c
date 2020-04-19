@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "alloc.h"
+#include "block.h"
 #include "blocks.h"
 #include "find.h"
 #include "helpers.h"
@@ -139,28 +140,28 @@ blockptr_t find_inode_data_blockptr(inode_t* inode, blockptr_t offset, bool allo
         absolute_blockptr = &inode->data_direct[offset];
     } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
         level1.blockptr = inode->data_single_indirect;
-        read_block(level1.blockptr, &level1.block);
+        block_read(level1.blockptr, &level1.block);
         absolute_blockptr = &level1.block.blocks[offset];
 
         if (alloc_sparse) last_level = &level1;
     } else if ((offset -= INODE_SINGLE_INDIRECT_BLOCKS) < INODE_DOUBLE_INDIRECT_BLOCKS) {
         level1.blockptr = inode->data_double_indirect;
-        read_block(level1.blockptr, &level1.block);
+        block_read(level1.blockptr, &level1.block);
 
         level2.blockptr = level1.block.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS];
-        read_block(level2.blockptr, &level2.block);
+        block_read(level2.blockptr, &level2.block);
         absolute_blockptr = &level2.block.blocks[offset % INDIRECT_BLOCK_ENTRIES];
 
         if (alloc_sparse) last_level = &level2;
     } else if ((offset -= INODE_DOUBLE_INDIRECT_BLOCKS) < INODE_TRIPLE_INDIRECT_BLOCKS) {
         level1.blockptr = inode->data_triple_indirect;
-        read_block(level1.blockptr, &level1.block);
+        block_read(level1.blockptr, &level1.block);
 
         level2.blockptr = level1.block.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS];
-        read_block(level2.blockptr, &level2.block);
+        block_read(level2.blockptr, &level2.block);
 
         level3.blockptr = level2.block.blocks[(offset % INODE_DOUBLE_INDIRECT_BLOCKS) / INODE_SINGLE_INDIRECT_BLOCKS];
-        read_block(level3.blockptr, &level3.block);
+        block_read(level3.blockptr, &level3.block);
         absolute_blockptr = &level3.block.blocks[offset % INDIRECT_BLOCK_ENTRIES];
 
         if (alloc_sparse) last_level = &level3;
@@ -170,12 +171,12 @@ blockptr_t find_inode_data_blockptr(inode_t* inode, blockptr_t offset, bool allo
     }
 
     if (alloc_sparse && *absolute_blockptr == NULL_BLOCKPTR) {
-        if (alloc_blockptr(absolute_blockptr)) {
+        if (block_allocptr(absolute_blockptr)) {
             printf("find_inode_data_blockptr: could not allocate new sparse file block\n");
         }
 
         if (last_level != NULL) {
-            write_block(last_level->blockptr, &last_level->block);
+            block_write(last_level->blockptr, &last_level->block);
         }
     }
 

@@ -10,7 +10,7 @@
 #include "read.h"
 #include "super_block_cache.h"
 #include "types.h"
-#include "vm.h"
+#include "disk.h"
 
 static int create_cache(bitmap_cache_t* cache, blockptr_t blockptr, blockptr_t length);
 static int dispose_cache(bitmap_cache_t* cache);
@@ -40,7 +40,7 @@ int bitmap_cache_dispose(void) {
 
 static int create_cache(bitmap_cache_t* cache, blockptr_t blockptr, blockptr_t length) {
     cache->length = (size_t)length * STZFS_BLOCK_SIZE;
-    cache->bitmap = mmap(NULL, cache->length, PROT_READ | PROT_WRITE, MAP_SHARED, vm_get_fd(),
+    cache->bitmap = mmap(NULL, cache->length, PROT_READ | PROT_WRITE, MAP_SHARED, disk_get_fd(),
                          (off_t)blockptr * STZFS_BLOCK_SIZE);
     cache->next = 0;
 

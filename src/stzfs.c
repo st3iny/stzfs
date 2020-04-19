@@ -9,6 +9,7 @@
 
 #include "alloc.h"
 #include "bitmap_cache.h"
+#include "block.h"
 #include "blocks.h"
 #include "find.h"
 #include "free.h"
@@ -18,7 +19,7 @@
 #include "read.h"
 #include "stzfs.h"
 #include "super_block_cache.h"
-#include "vm.h"
+#include "disk.h"
 #include "write.h"
 
 // overwrite root dir permissions
@@ -61,7 +62,7 @@ struct fuse_operations stzfs_ops = {
 
 // init filesystem
 blockptr_t stzfs_makefs(inodeptr_t inode_count) {
-    const blockptr_t blocks = vm_size() / STZFS_BLOCK_SIZE;
+    const blockptr_t blocks = disk_get_size() / STZFS_BLOCK_SIZE;
     printf("stzfs_makefs: creating file system with %i blocks and %i inodes\n", blocks, inode_count);
 
     // calculate bitmap and inode table lengths
@@ -88,9 +89,9 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     // initialize all bitmaps and inode table with zeroes
     data_block initial_block;
     memset(&initial_block, 0, STZFS_BLOCK_SIZE);
-    vm_write(0, &initial_block, STZFS_BLOCK_SIZE);
+    disk_write(0, &initial_block, STZFS_BLOCK_SIZE);
     for (blockptr_t blockptr = 1; blockptr < initial_block_count; blockptr++) {
-        write_block(blockptr, &initial_block);
+        block_write(blockptr, &initial_block);
     }
     printf("stzfs_makefs: wrote %i initial blocks\n", initial_block_count);
 
@@ -102,7 +103,7 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     memset(&ba, 0xff, STZFS_BLOCK_SIZE);
     blockptr_t initial_allocated_bitmap_blocks = initial_block_count / (STZFS_BLOCK_SIZE * 8);
     for (initial_bitmap_offset = 0; initial_bitmap_offset < initial_allocated_bitmap_blocks; initial_bitmap_offset++) {
-        write_block(sb.block_bitmap + initial_bitmap_offset, &ba);
+        block_write(sb.block_bitmap + initial_bitmap_offset, &ba);
     }
 
     // write partially filled bitmap block
@@ -111,16 +112,16 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     memset(&ba, 0xff, allocated_entries * 8);
     int shift_partial_entry = (initial_block_count % (STZFS_BLOCK_SIZE * 8)) % 64;
     ba.bitmap[allocated_entries] = (1UL << shift_partial_entry) - 1UL;
-    write_block(sb.block_bitmap + initial_bitmap_offset, &ba);
+    block_write(sb.block_bitmap + initial_bitmap_offset, &ba);
 
     // write initial inode bitmap
     bitmap_block first_inode_bitmap_block;
     memset(&first_inode_bitmap_block, 0, STZFS_BLOCK_SIZE);
     first_inode_bitmap_block.bitmap[0] = 1;
-    write_block(sb.inode_bitmap, &first_inode_bitmap_block);
+    block_write(sb.inode_bitmap, &first_inode_bitmap_block);
 
     // write superblock (can't use write_block here because of security limitations)
-    vm_write(0, &sb, STZFS_BLOCK_SIZE);
+    disk_write(0, &sb, STZFS_BLOCK_SIZE);
 
     // init filesystem
     stzfs_init();
@@ -130,7 +131,7 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
     memset(&root_dir_block, 0, STZFS_BLOCK_SIZE);
     root_dir_block.entries[0] = (dir_block_entry) {.name = ".", .inode = 1};
     blockptr_t root_dir_block_ptr;
-    alloc_block(&root_dir_block_ptr, &root_dir_block);
+    block_alloc(&root_dir_block_ptr, &root_dir_block);
     printf("stzfs_makefs: wrote root dir block at %i\n", root_dir_block_ptr);
 
     // create root inode
@@ -182,7 +183,7 @@ void stzfs_fuse_destroy(void* private_data) {
 void stzfs_destroy(void) {
     bitmap_cache_dispose();
     super_block_cache_dispose();
-    vm_destroy();
+    disk_close();
 }
 
 // get file stats
@@ -594,7 +595,7 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     // allocate new block
     blockptr_t blockptr;
     {
-        const int err = alloc_blockptr(&blockptr);
+        const int err = block_allocptr(&blockptr);
         if (err) {
             printf("stzfs_mkdir: could not allocate directory block\n");
             return err;
@@ -606,7 +607,7 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     memset(&block, 0, STZFS_BLOCK_SIZE);
     block.entries[0] = (dir_block_entry) {.name = ".", .inode=dir.inodeptr};
     block.entries[1] = (dir_block_entry) {.name = "..", .inode=parent.inodeptr};
-    write_block(blockptr, &block);
+    block_write(blockptr, &block);
 
     // TODO: check inode bounds
     // increase parent inode link counter

@@ -6,23 +6,10 @@
 #include "alloc.h"
 #include "find.h"
 #include "helpers.h"
-#include "vm.h"
+#include "disk.h"
 #include "read.h"
 #include "super_block_cache.h"
 #include "write.h"
-
-// write block to disk
-void write_block(blockptr_t blockptr, const void* block) {
-    if (blockptr == SUPER_BLOCKPTR) {
-        printf("write_block: trying to write protected super block\n");
-    } else if (blockptr == NULL_BLOCKPTR) {
-        printf("write_block: trying to write null block\n");
-    } else if (blockptr > BLOCKPTR_MAX) {
-        printf("write_block: blockptr out of bounds\n");
-    } else {
-        vm_write((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
-    }
-}
 
 // write inode to disk
 void write_inode(inodeptr_t inodeptr, const inode_t* inode) {
@@ -42,9 +29,9 @@ void write_inode(inodeptr_t inodeptr, const inode_t* inode) {
     // place inode in table and write back table block
     blockptr_t table_blockptr = sb->inode_table + table_block_offset;
     inode_block table_block;
-    read_block(table_blockptr, &table_block);
+    block_read(table_blockptr, &table_block);
     table_block.inodes[inodeptr % INODE_BLOCK_ENTRIES] = *inode;
-    write_block(table_blockptr, &table_block);
+    block_write(table_blockptr, &table_block);
 }
 
 // read inode data block with relative offset
@@ -55,7 +42,7 @@ blockptr_t write_inode_data_block(inode_t* inode, blockptr_t offset, const void*
         return 0;
     }
 
-    write_block(blockptr, block);
+    block_write(blockptr, block);
     return blockptr;
 }
 

@@ -6,7 +6,9 @@
 #include "fuse.h"
 #include "stzfs.h"
 #include "types.h"
-#include "vm.h"
+#include "disk.h"
+
+#define DISK_FILE_PATH "/tmp/vm-hdd.dat"
 
 int printf_filler(void* buffer, const char *name, const struct stat* stbuf, off_t offset,
                   enum fuse_fill_dir_flags flags) {
@@ -19,8 +21,8 @@ int main() {
     const inodeptr_t inodes = (const inodeptr_t)pow(2, 20);
 
     // create vm hdd
-    vm_config_create_file(VM_HDD_PATH, (long long)blocks * STZFS_BLOCK_SIZE);
-    off_t size = vm_config_set_file(VM_HDD_PATH);
+    disk_create_file(DISK_FILE_PATH, (long long)blocks * STZFS_BLOCK_SIZE);
+    off_t size = disk_set_file(DISK_FILE_PATH);
 
     // create and init filesystem
     stzfs_makefs(inodes);

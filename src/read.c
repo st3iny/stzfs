@@ -2,34 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "block.h"
 #include "find.h"
 #include "read.h"
 #include "super_block_cache.h"
-#include "vm.h"
-
-// read block from disk
-void read_block(blockptr_t blockptr, void* block) {
-    if (blockptr == SUPER_BLOCKPTR) {
-        printf("read_block: trying to read protected super block\n");
-        return;
-    } else if (blockptr > BLOCKPTR_MAX && blockptr != NULL_BLOCKPTR) {
-        printf("read_block: blockptr out of bounds\n");
-        return;
-    }
-
-    if (blockptr == NULL_BLOCKPTR) {
-        memset(block, 0, STZFS_BLOCK_SIZE);
-    } else {
-        vm_read((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
-    }
-}
-
-// read blocks from disk
-void read_blocks(const blockptr_t* blockptrs, void* blocks, blockptr_t length) {
-    for (size_t i = 0; i < length; i++) {
-        read_block(blockptrs[i], blocks + i * STZFS_BLOCK_SIZE);
-    }
-}
+#include "disk.h"
 
 // read inode from disk
 void read_inode(inodeptr_t inodeptr, inode_t* inode) {
@@ -44,7 +21,7 @@ void read_inode(inodeptr_t inodeptr, inode_t* inode) {
     // get inode table block
     blockptr_t inode_table_blockptr = sb->inode_table + inode_table_block_offset;
     inode_block inode_table_block;
-    read_block(inode_table_blockptr, &inode_table_block);
+    block_read(inode_table_blockptr, &inode_table_block);
 
     // read inode from inode table block
     *inode = inode_table_block.inodes[inodeptr % (STZFS_BLOCK_SIZE / sizeof(inode_t))];
@@ -58,7 +35,7 @@ blockptr_t read_inode_data_block(inode_t* inode, blockptr_t offset, void* block)
         return 0;
     }
 
-    read_block(blockptr, block);
+    block_read(blockptr, block);
     return blockptr;
 }
 
@@ -69,7 +46,7 @@ int read_inode_data_blocks(inode_t* inode, void* data_block_array, blockptr_t le
     int err = find_inode_data_blockptrs(inode, blockptrs, length, offset);
     if (err) return err;
 
-    read_blocks(blockptrs, data_block_array, length);
+    block_readall(blockptrs, data_block_array, length);
 
     return 0;
 }

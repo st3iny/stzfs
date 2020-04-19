@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "disk.h"
 #include "fuse.h"
 #include "stzfs.h"
-#include "vm.h"
 
 void print_usage(void) {
     printf("usage: stzfs <disk> <mountpoint> [options]\n");
@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
 
     // run fuse
     printf("mounting %s at %s\n", disk, argv[2]);
-    vm_config_set_file(disk);
+    disk_set_file(disk);
     struct fuse_args args = FUSE_ARGS_INIT(argc - 1, argv_new);
     fuse_opt_parse(&args, NULL, NULL, NULL);
     fuse_opt_add_arg(&args, "-s");

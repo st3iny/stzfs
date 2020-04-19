@@ -12,7 +12,7 @@
 #include "stzfs.h"
 #include "super_block_cache.h"
 #include "utils.h"
-#include "vm.h"
+#include "disk.h"
 
 // helpers
 static void utils_print_block_range(blockptr_t offset, blockptr_t length);
@@ -50,8 +50,10 @@ int main(int argc, char** argv) {
         {0,              0,                 0,             0}
     };
 
-    // set vm hdd file
-    vm_config_set_file(argv[1]);
+    // set vm hdd file and init stfs
+    if (disk_set_file(argv[1])) {
+        return 1;
+    }
     stzfs_init();
 
     // loop as long as there are long options available
@@ -112,7 +114,7 @@ void utils_print_inode_table(const char* arg) {
 void utils_print_block(const char* arg) {
     blockptr_t blockptr = strtol(arg, NULL, 10);
     data_block block;
-    read_block(blockptr, &block);
+    block_read(blockptr, &block);
 
     // write block to stdout to enable piping to hexdump for example
     write(1, &block, STZFS_BLOCK_SIZE);
@@ -129,7 +131,7 @@ void utils_print_inode(const char* arg) {
     }
 
     inode_block inode_table_block;
-    read_block(sb->inode_table + inode_table_block_offset, &inode_table_block);
+    block_read(sb->inode_table + inode_table_block_offset, &inode_table_block);
     inode_t* inode_data = &inode_table_block.inodes[inodeptr % (STZFS_BLOCK_SIZE / INODE_SIZE)];
 
     printf("inode@%i = {\n", inodeptr);
@@ -181,7 +183,7 @@ void utils_print_inode(const char* arg) {
 void utils_print_block_range(blockptr_t offset, blockptr_t length) {
     for (blockptr_t blockptr = offset; blockptr < offset + length; blockptr++) {
         data_block block;
-        read_block(blockptr, &block);
+        block_read(blockptr, &block);
         write(1, &block, STZFS_BLOCK_SIZE);
     }
 }
@@ -197,7 +199,7 @@ bool utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap, blockptr_t 
 
     // extract bitmap allocation status for given block or inode
     bitmap_block ba;
-    read_block(block_bitmap + bitmap_block_offset, &ba);
+    block_read(block_bitmap + bitmap_block_offset, &ba);
     bitmap_entry_t entry = ba.bitmap[inner_offset];
 
     // mask status as only the least significant bit matters
