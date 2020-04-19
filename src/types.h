@@ -24,7 +24,7 @@
 #define M_STICKY (0b0000000000010000) // sticky
 
 // last 2 bits decide over file type
-#define M_TYPE_MASK (0b11)
+#define M_TYPE_MASK            (0b11)
 #define M_REG    (0b0000000000000000) // regular file
 #define M_LNK    (0b0000000000000001) // symbolic link
 #define M_DIR    (0b0000000000000010) // directory
@@ -55,5 +55,8 @@ typedef uint32_t objptr_t;
 // special block pointer
 #define SUPER_BLOCKPTR (0)
 #define NULL_BLOCKPTR ((blockptr_t)-2)
+
+// special inode pointer
+#define ROOT_INODEPTR (1)
 
 #endif // STZFS_TYPES_H
