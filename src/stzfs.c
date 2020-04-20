@@ -26,11 +26,11 @@
 #define STZFS_SHOW_DOUBLE_DOTS_IN_ROOT_DIR 1
 
 // debug print macro
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #if ENABLE_DEBUG
 #define STZFS_DEBUG(args...) printf("%s(", __FUNCTION__); printf(args); printf(")\n");
 #else
-#define STZFS_DEBUG()
+#define STZFS_DEBUG(...)
 #endif
 
 // fuse operations
