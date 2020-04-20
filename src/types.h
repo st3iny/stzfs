@@ -45,16 +45,16 @@ typedef uint64_t bitmap_entry_t;
 typedef uint32_t objptr_t;
 
 // protected block that can't be written
-#define INODEPTR_ERROR ((inodeptr_t)-1)
-#define BLOCKPTR_ERROR ((inodeptr_t)-1)
+#define INODEPTR_ERROR ((int64_t)-1)
+#define BLOCKPTR_ERROR ((int64_t)-2)
 
 // maximum value for object pointers
 #define INODEPTR_MAX(super_block) MIN((inodeptr_t)-2, super_block->free_inodes)
-#define BLOCKPTR_MAX ((inodeptr_t)-3)
+#define BLOCKPTR_MAX ((inodeptr_t)-2)
 
 // special block pointer
 #define SUPER_BLOCKPTR (0)
-#define NULL_BLOCKPTR ((blockptr_t)-2)
+#define NULL_BLOCKPTR ((blockptr_t)-1)
 
 // special inode pointer
 #define ROOT_INODEPTR (1)

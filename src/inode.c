@@ -67,7 +67,7 @@ stzfs_error_t inode_alloc(int64_t* inodeptr, const inode_t* inode) {
 
 // append blockptr to inode block list
 stzfs_error_t inode_append_data_blockptr(inode_t* inode, int64_t blockptr) {
-    if (!blockptr_is_valid(blockptr)) {
+    if (!blockptr_is_valid(blockptr) && blockptr != NULL_BLOCKPTR) {
         LOG("invalid blockptr given");
         return ERROR;
     }

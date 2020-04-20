@@ -13,11 +13,6 @@
 
 // alloc entry in given bitmap
 static stzfs_error_t bitmap_alloc(bitmap_cache_t* cache, int64_t* ptr) {
-    if (ptr < 0 || *ptr >= cache->length * 8) {
-        LOG("bitmap index out of bounds");
-        return ERROR;
-    }
-
     bitmap_entry_t* bitmap = (bitmap_entry_t*)cache->bitmap;
     const size_t bitmap_length = cache->length / sizeof(bitmap_entry_t);
 
@@ -100,21 +95,11 @@ bool bitmap_is_inode_allocated(int64_t inodeptr) {
 
 // alloc new block in block bitmap
 stzfs_error_t bitmap_alloc_block(int64_t* blockptr) {
-    if (bitmap_is_block_allocated(*blockptr)) {
-        LOG("blockptr is already allocated");
-        return ERROR;
-    }
-
     return bitmap_alloc(&block_bitmap_cache, blockptr);
 }
 
 // alloc new inode in inode bitmap
 stzfs_error_t bitmap_alloc_inode(int64_t* inodeptr) {
-    if (bitmap_is_inode_allocated(*inodeptr)) {
-        LOG("inodeptr is already allocated");
-        return ERROR;
-    }
-
     return bitmap_alloc(&inode_bitmap_cache, inodeptr);
 }
 
