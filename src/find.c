@@ -11,7 +11,6 @@
 #include "helpers.h"
 #include "inode.h"
 #include "super_block_cache.h"
-#include "write.h"
 
 // find the inode linked to given path
 int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,

@@ -6,7 +6,6 @@
 #include "find.h"
 #include "helpers.h"
 #include "inode.h"
-#include "write.h"
 
 // check if file exists
 int file_exists(const char* path) {

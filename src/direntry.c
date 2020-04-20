@@ -13,11 +13,12 @@
 
 // alloc a new entry in a directory inode
 stzfs_error_t direntry_alloc(inode_t* inode, const char* name, int64_t target_inodeptr) {
-    // set max_link_count to 0xffff - 1 to prevent a deadlock
     if (strlen(name) > MAX_FILENAME_LENGTH) {
         LOG("filename too long");
         return ERROR;
-    } else if (inode->link_count >= DIRECTORY_MAX_LINK_COUNT) {
+    } else if (inode->link_count >= DIRECTORY_MAX_LINK_COUNT - 1) {
+        // link count will be increased by one if a directory is inserted
+        // FIXME: implement this in a better way
         LOG("max link count reached");
         return ERROR;
     } else if (!M_IS_DIR(inode->mode)) {
@@ -120,4 +121,32 @@ stzfs_error_t direntry_free(inode_t* inode, const char* name) {
 
     inode->atom_count--;
     return SUCCESS;
+}
+
+// replace inodeptr of name in directory
+// TODO: create a direntry search method to remove code duplication (also see direntry_free)
+stzfs_error_t direntry_write(inode_t* inode, const char* name, int64_t target_inodeptr) {
+    if (!M_IS_DIR(inode->mode)) {
+        LOG("not a directory");
+        return ERROR;
+    }
+
+    // search and replace name in directory
+    for (int64_t offset = 0; offset < inode->block_count; offset++) {
+        dir_block block;
+        inode_read_data_block(inode, offset, &block, NULL);
+
+        const size_t remaining_entries = inode->atom_count - offset * DIR_BLOCK_ENTRIES;
+        const size_t entries = MIN(DIR_BLOCK_ENTRIES, remaining_entries);
+        for (size_t entry = 0; entry < entries; entry++) {
+            if (strcmp((const char*)block.entries[entry].name, name) == 0) {
+                block.entries[entry].inode = target_inodeptr;
+                inode_write_data_block(inode, offset, &block);
+                return SUCCESS;
+            }
+        }
+    }
+
+    LOG("name does not exist in directory");
+    return ERROR;
 }

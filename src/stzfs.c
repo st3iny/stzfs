@@ -18,7 +18,6 @@
 #include "stzfs.h"
 #include "super_block_cache.h"
 #include "disk.h"
-#include "write.h"
 
 // overwrite root dir permissions
 #define STZFS_MOUNT_AS_USER 1
@@ -504,7 +503,7 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
     inode_write(src.inodeptr, &src.inode);
 
     if (dst_exists) {
-        write_dir_entry(&dst_parent.inode, dst_last_name, src.inodeptr);
+        direntry_write(&dst_parent.inode, dst_last_name, src.inodeptr);
         dst.inode.link_count--;
         if (dst.inode.link_count <= 0) {
             inode_free(dst.inodeptr, &dst.inode);
@@ -521,7 +520,7 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
         dst_parent.inode.link_count++;
         inode_write(dst_parent.inodeptr, &dst_parent.inode);
 
-        write_dir_entry(&src.inode, "..", dst_parent.inodeptr);
+        direntry_write(&src.inode, "..", dst_parent.inodeptr);
 
         src_parent.inode.link_count--;
         inode_write(src_parent.inodeptr, &src_parent.inode);
