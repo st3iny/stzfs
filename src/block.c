@@ -3,11 +3,9 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "alloc.h"
 #include "bitmap.h"
 #include "disk.h"
 #include "error.h"
-#include "free.h"
 #include "log.h"
 #include "super_block_cache.h"
 #include "types.h"

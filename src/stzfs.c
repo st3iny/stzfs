@@ -7,12 +7,11 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "alloc.h"
+#include "direntry.h"
 #include "bitmap_cache.h"
 #include "block.h"
 #include "blocks.h"
 #include "find.h"
-#include "free.h"
 #include "fuse.h"
 #include "helpers.h"
 #include "inode.h"
@@ -445,7 +444,7 @@ int stzfs_create(const char* file_path, mode_t mode, struct fuse_file_info* file
     inode.link_count = 1;
 
     inode_alloc(&inodeptr, &inode);
-    alloc_dir_entry(&parent_inode, last_name, inodeptr);
+    direntry_alloc(&parent_inode, last_name, inodeptr);
     inode_write(parent_inodeptr, &parent_inode);
 
     file_info->fh = inodeptr;
@@ -513,7 +512,7 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
             inode_write(dst.inodeptr, &dst.inode);
         }
     } else {
-        alloc_dir_entry(&dst_parent.inode, dst_last_name, src.inodeptr);
+        direntry_alloc(&dst_parent.inode, dst_last_name, src.inodeptr);
         inode_write(dst_parent.inodeptr, &dst_parent.inode);
     }
 
@@ -533,7 +532,7 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
     }
 
     // unlink src from parent directory
-    free_dir_entry(&src_parent.inode, src_last_name);
+    direntry_free(&src_parent.inode, src_last_name);
     inode_write(src_parent.inodeptr, &src_parent.inode);
 
     src.inode.link_count--;
@@ -631,7 +630,7 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     inode_write(dir.inodeptr, &dir.inode);
 
     // allocate entry in parent dir
-    alloc_dir_entry(&parent.inode, name, dir.inodeptr);
+    direntry_alloc(&parent.inode, name, dir.inodeptr);
     inode_write(parent.inodeptr, &parent.inode);
 
     return 0;
@@ -864,7 +863,7 @@ int stzfs_link(const char* src, const char* dest) {
     src_file.inode.link_count++;
     inode_write(src_file.inodeptr, &src_file.inode);
 
-    alloc_dir_entry(&dest_parent.inode, dest_last_name, src_file.inodeptr);
+    direntry_alloc(&dest_parent.inode, dest_last_name, src_file.inodeptr);
     inode_write(dest_parent.inodeptr, &dest_parent.inode);
 
     return 0;
@@ -900,7 +899,7 @@ int stzfs_symlink(const char* target, const char* link_name) {
     symlink.inode.link_count = 1;
 
     inode_alloc(&symlink.inodeptr, &symlink.inode);
-    alloc_dir_entry(&symlink_parent.inode, symlink_last_name, symlink.inodeptr);
+    direntry_alloc(&symlink_parent.inode, symlink_last_name, symlink.inodeptr);
     inode_write(symlink_parent.inodeptr, &symlink_parent.inode);
 
     // write target to symbolic link data blocks

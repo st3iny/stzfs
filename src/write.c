@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "alloc.h"
 #include "find.h"
 #include "helpers.h"
 #include "inode.h"

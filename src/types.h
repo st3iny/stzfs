@@ -59,4 +59,7 @@ typedef uint32_t objptr_t;
 // special inode pointer
 #define ROOT_INODEPTR (1)
 
+// max link count of a directory inode
+#define DIRECTORY_MAX_LINK_COUNT (0xffff - 1)
+
 #endif // STZFS_TYPES_H

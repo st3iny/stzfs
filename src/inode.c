@@ -4,7 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "alloc.h"
 #include "bitmap.h"
 #include "block.h"
 #include "blockptr.h"

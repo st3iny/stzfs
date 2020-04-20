@@ -3,9 +3,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "alloc.h"
 #include "find.h"
-#include "free.h"
 #include "helpers.h"
 #include "inode.h"
 #include "write.h"
@@ -73,7 +71,7 @@ int unlink_file_or_dir(const char* path, int allow_dir) {
         parent.inode.link_count--;
     }
 
-    free_dir_entry(&parent.inode, name);
+    direntry_free(&parent.inode, name);
     inode_write(parent.inodeptr, &parent.inode);
 
     f.inode.link_count--;
