@@ -47,6 +47,10 @@ typedef struct file {
     inode_t inode;
 } file;
 
+// sparse alloc enum helper
+typedef bool alloc_sparse_t;
+enum { ALLOC_SPARSE_NO = false, ALLOC_SPARSE_YES = true };
+
 // functions
 stzfs_error_t inode_allocptr(int64_t* inodeptr);
 stzfs_error_t inode_alloc(int64_t* inodeptr, const inode_t* inode);
@@ -62,5 +66,7 @@ stzfs_error_t inode_read_data_blocks(inode_t* inode, void* block_arr, size_t len
 stzfs_error_t inode_write(int64_t inodeptr, const inode_t* inode);
 stzfs_error_t inode_write_data_block(inode_t* inode, int64_t offset, const void* block);
 stzfs_error_t inode_write_or_alloc_data_block(inode_t* inode, int64_t offset, const void* block);
+stzfs_error_t inode_find_data_blockptr(inode_t* inode, int64_t offset, alloc_sparse_t alloc_sparse, int64_t* blockptr_out);
+stzfs_error_t inode_find_data_blockptrs(inode_t* inode, int64_t offset, int64_t* blockptr_arr, size_t length);
 
 #endif // STZFS_INODE_H

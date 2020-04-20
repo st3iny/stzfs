@@ -150,3 +150,32 @@ stzfs_error_t direntry_write(inode_t* inode, const char* name, int64_t target_in
     LOG("name does not exist in directory");
     return ERROR;
 }
+
+// find name in directory inode
+stzfs_error_t direntry_find(inode_t* inode, const char* name, int64_t* found_inodeptr) {
+    if (!M_IS_DIR(inode->mode)) {
+        LOG("inode is not a directory");
+        *found_inodeptr = INODEPTR_ERROR;
+        return ERROR;
+    }
+
+    // read directory blocks and search them
+    for (int64_t offset = 0; offset < inode->block_count; offset++) {
+        dir_block block;
+        inode_read_data_block(inode, offset, &block, NULL);
+
+        const size_t remaining_entries = inode->atom_count - offset * DIR_BLOCK_ENTRIES;
+        const size_t entries = MIN(DIR_BLOCK_ENTRIES, remaining_entries);
+        for (size_t entry = 0; entry < entries; entry++) {
+            if (strcmp((const char*)block.entries[entry].name, name) == 0) {
+                // found name in directory
+                *found_inodeptr = block.entries[entry].inode;
+                return SUCCESS;
+            }
+        }
+    }
+
+    // file not found in directory
+    *found_inodeptr = INODEPTR_ERROR;
+    return SUCCESS;
+}

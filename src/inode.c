@@ -354,7 +354,8 @@ stzfs_error_t inode_read_data_block(inode_t* inode, int64_t offset, void* block,
         return ERROR;
     }
 
-    int64_t blockptr = find_inode_data_blockptr(inode, offset, ALLOC_SPARSE_NO);
+    int64_t blockptr;
+    inode_find_data_blockptr(inode, offset, ALLOC_SPARSE_NO, &blockptr);
     block_read(blockptr, block);
 
     if (blockptr_out != NULL) {
@@ -371,7 +372,7 @@ stzfs_error_t inode_read_data_blocks(inode_t* inode, void* block_arr, size_t len
     }
 
     int64_t blockptr_arr[length];
-    find_inode_data_blockptrs(inode, blockptr_arr, length, offset);
+    inode_find_data_blockptrs(inode, offset, blockptr_arr, length);
     block_readall(blockptr_arr, block_arr, length);
     return SUCCESS;
 }
@@ -407,7 +408,8 @@ stzfs_error_t inode_write_data_block(inode_t* inode, int64_t offset, const void*
         return ERROR;
     }
 
-    int64_t blockptr = find_inode_data_blockptr(inode, offset, ALLOC_SPARSE_YES);
+    int64_t blockptr;
+    inode_find_data_blockptr(inode, offset, ALLOC_SPARSE_YES, &blockptr);
     block_write(blockptr, block);
     return SUCCESS;
 }
@@ -426,5 +428,93 @@ stzfs_error_t inode_write_or_alloc_data_block(inode_t* inode, int64_t offset, co
         inode_alloc_data_block(inode, block);
     }
 
+    return SUCCESS;
+}
+
+// translate relative inode data block offset to absolute blockptr
+stzfs_error_t inode_find_data_blockptr(inode_t* inode, int64_t offset, alloc_sparse_t alloc_sparse,
+                                       int64_t* blockptr_out) {
+    if (offset > inode->block_count) {
+        LOG("relative data block offset out of bounds");
+        *blockptr_out = BLOCKPTR_ERROR;
+        return ERROR;
+    } else if (offset >= INODE_MAX_BLOCKS) {
+        LOG("relative data block offset out of absolute bounds");
+        *blockptr_out = BLOCKPTR_ERROR;
+        return ERROR;
+    }
+
+    typedef struct level {
+        int64_t blockptr;
+        indirect_block block;
+    } level;
+
+    level level1, level2, level3;
+    level* last_level = NULL;
+
+    blockptr_t* absolute_blockptr;
+    if (offset < INODE_DIRECT_BLOCKS) {
+        absolute_blockptr = &inode->data_direct[offset];
+    } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
+        level1.blockptr = inode->data_single_indirect;
+        block_read(level1.blockptr, &level1.block);
+        absolute_blockptr = &level1.block.blocks[offset];
+
+        if (alloc_sparse) last_level = &level1;
+    } else if ((offset -= INODE_SINGLE_INDIRECT_BLOCKS) < INODE_DOUBLE_INDIRECT_BLOCKS) {
+        level1.blockptr = inode->data_double_indirect;
+        block_read(level1.blockptr, &level1.block);
+
+        level2.blockptr = level1.block.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS];
+        block_read(level2.blockptr, &level2.block);
+        absolute_blockptr = &level2.block.blocks[offset % INDIRECT_BLOCK_ENTRIES];
+
+        if (alloc_sparse) last_level = &level2;
+    } else if ((offset -= INODE_DOUBLE_INDIRECT_BLOCKS) < INODE_TRIPLE_INDIRECT_BLOCKS) {
+        level1.blockptr = inode->data_triple_indirect;
+        block_read(level1.blockptr, &level1.block);
+
+        level2.blockptr = level1.block.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS];
+        block_read(level2.blockptr, &level2.block);
+
+        level3.blockptr = level2.block.blocks[(offset % INODE_DOUBLE_INDIRECT_BLOCKS) / INODE_SINGLE_INDIRECT_BLOCKS];
+        block_read(level3.blockptr, &level3.block);
+        absolute_blockptr = &level3.block.blocks[offset % INDIRECT_BLOCK_ENTRIES];
+
+        if (alloc_sparse) last_level = &level3;
+    } else {
+        LOG("relative block offset out of bounds");
+        *blockptr_out = BLOCKPTR_ERROR;
+        return ERROR;
+    }
+
+    if (alloc_sparse && *absolute_blockptr == NULL_BLOCKPTR) {
+        int64_t new_blockptr;
+        block_allocptr(&new_blockptr);
+        *absolute_blockptr = new_blockptr;
+
+        if (last_level != NULL) {
+            block_write(last_level->blockptr, &last_level->block);
+        }
+    }
+
+    *blockptr_out = *absolute_blockptr;
+    return SUCCESS;
+}
+
+// find inode blockptrs and store them in the given buffer
+stzfs_error_t inode_find_data_blockptrs(inode_t* inode, int64_t offset, int64_t* blockptr_arr,
+                                        size_t length) {
+    if (offset + length > inode->block_count) {
+        LOG("relative data block offset out of range");
+        for (size_t i = 0; i < length; i++) {
+            blockptr_arr[i] = BLOCKPTR_ERROR;
+        }
+        return ERROR;
+    }
+
+    for (size_t i = 0; i < length; i++) {
+        inode_find_data_blockptr(inode, i + offset, ALLOC_SPARSE_NO, &blockptr_arr[i]);
+    }
     return SUCCESS;
 }
