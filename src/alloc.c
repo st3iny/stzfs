@@ -6,9 +6,9 @@
 
 #include "alloc.h"
 #include "block.h"
+#include "inode.h"
 #include "bitmap_cache.h"
 #include "blocks.h"
-#include "read.h"
 #include "super_block_cache.h"
 #include "write.h"
 
@@ -48,170 +48,6 @@ int alloc_bitmap(objptr_t* index, bitmap_cache_t* cache) {
     return 0;
 }
 
-// allocate new inodeptr only
-int alloc_inodeptr(inodeptr_t* inodeptr) {
-    int return_code = 0;
-    super_block* sb = super_block_cache;
-
-    if (sb->free_inodes == 0) {
-        printf("alloc_inodeptr: no free inode available\n");
-        return_code = -ENOSPC;
-        goto END;
-    }
-
-    const int err = alloc_bitmap((objptr_t*)inodeptr, &inode_bitmap_cache);
-    if (err) {
-        printf("alloc_inodeptr: could not allocate inodeptr\n");
-        return_code = err;
-        goto END;
-    }
-
-    // update superblock
-    sb->free_inodes--;
-    super_block_cache_sync();
-
-END:
-    if (return_code) {
-        *inodeptr = INODEPTR_ERROR;
-    }
-    return return_code;
-}
-
-// allocate and write a new inode in place
-int alloc_inode(inodeptr_t* inodeptr, const inode_t* inode) {
-    const super_block* sb = super_block_cache;
-
-    // get next free inode
-    const int err = alloc_inodeptr(inodeptr);
-    if (err) {
-        printf("alloc_inode: could not allocate inode\n");
-        return err;
-    }
-
-    // get inode table block
-    const blockptr_t inode_table_offset = *inodeptr / INODE_BLOCK_ENTRIES;
-    const blockptr_t inode_table_blockptr = sb->inode_table + inode_table_offset;
-    inode_block inode_table_block;
-    block_read(inode_table_blockptr, &inode_table_block);
-
-    // place inode into table and write table block
-    inode_table_block.inodes[*inodeptr % INODE_BLOCK_ENTRIES] = *inode;
-    block_write(inode_table_blockptr, &inode_table_block);
-
-    return 0;
-}
-
-// append blockptr to inode block list
-static void alloc_inode_data_blockptr(inode_t* inode, blockptr_t blockptr) {
-    // level struct for indirection convenience
-    typedef struct level {
-        blockptr_t* blockptr;
-        indirect_block block;
-        bool changed;
-    } level;
-
-    blockptr_t offset = inode->block_count;
-    if (offset < INODE_DIRECT_BLOCKS) {
-        inode->data_direct[offset] = blockptr;
-    } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
-        level level1 = {.blockptr = &inode->data_single_indirect};
-        if (offset == 0) {
-            block_alloc(level1.blockptr, &level1.block);
-        } else {
-            block_read(*level1.blockptr, &level1.block);
-        }
-
-        level1.block.blocks[offset] = blockptr;
-
-        block_write(*level1.blockptr, &level1.block);
-    } else if ((offset -= INODE_SINGLE_INDIRECT_BLOCKS) < INODE_DOUBLE_INDIRECT_BLOCKS) {
-        level level1 = {.blockptr = &inode->data_double_indirect};
-        if (offset == 0) {
-            block_alloc(level1.blockptr, &level1.block);
-        } else {
-            block_read(*level1.blockptr, &level1.block);
-        }
-
-        level level2 = {.blockptr = &level1.block.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS]};
-        if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) {
-            level1.changed = true;
-            block_alloc(level2.blockptr, &level2.block);
-        } else {
-            block_read(*level2.blockptr, &level2.block);
-        }
-
-        level2.block.blocks[offset % INDIRECT_BLOCK_ENTRIES] = blockptr;
-
-        if (level1.changed) block_write(*level1.blockptr, &level1.block);
-        block_write(*level2.blockptr, &level2.block);
-    } else if ((offset -= INODE_DOUBLE_INDIRECT_BLOCKS) < INODE_TRIPLE_INDIRECT_BLOCKS) {
-        level level1 = {.blockptr = &inode->data_triple_indirect};
-        if (offset == 0) {
-            block_alloc(level1.blockptr, &level1.block);
-        } else {
-            block_read(*level1.blockptr, &level1.block);
-        }
-
-        level level2 = {.blockptr = &level1.block.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS]};
-        if (offset % INODE_DOUBLE_INDIRECT_BLOCKS == 0) {
-            level1.changed = true;
-            block_alloc(level2.blockptr, &level2.block);
-        } else {
-            block_read(*level2.blockptr, &level2.block);
-        }
-
-        level level3 = {.blockptr = &level2.block.blocks[(offset % INODE_DOUBLE_INDIRECT_BLOCKS) / INODE_SINGLE_INDIRECT_BLOCKS]};
-        if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) {
-            level2.changed = true;
-            block_alloc(level3.blockptr, &level3.block);
-        } else {
-            block_read(*level3.blockptr, &level3.block);
-        }
-
-        level3.block.blocks[offset % INDIRECT_BLOCK_ENTRIES] = blockptr;
-
-        if (level1.changed) block_write(*level1.blockptr, &level1.block);
-        if (level2.changed) block_write(*level2.blockptr, &level2.block);
-        block_write(*level3.blockptr, &level3.block);
-    }
-
-    inode->block_count++;
-}
-
-// alloc a new data block for an inode
-blockptr_t alloc_inode_data_block(inode_t* inode, const void* block) {
-    if (inode->block_count >= INODE_MAX_BLOCKS) {
-        printf("alloc_inode_data_block: inode has reached max block count\n");
-        return 0;
-    }
-
-    // alloc data block
-    blockptr_t blockptr;
-    block_alloc(&blockptr, block);
-
-    // append to inode block list
-    alloc_inode_data_blockptr(inode, blockptr);
-
-    return blockptr;
-}
-
-// alloc new inode null blocks and truncate inode to block_count
-int alloc_inode_null_blocks(inode_t* inode, blockptr_t block_count) {
-    if (block_count > BLOCKPTR_MAX) {
-        printf("alloc_inode_null_blocks: new block count out of bounds\n");
-        return -EFBIG;
-    } else if (block_count < inode->block_count) {
-        printf("alloc_inode_null_blocks: new block count smaller than current inode block count\n");
-        return -EINVAL;
-    }
-
-    for (blockptr_t i = inode->block_count; i < block_count; i++) {
-        alloc_inode_data_blockptr(inode, NULL_BLOCKPTR);
-    }
-
-    return 0;
-}
-
 // alloc an entry in a directory inode
 int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr) {
     // set max_link_count to 0xffff - 1 to prevent a deadlock
@@ -237,7 +73,7 @@ int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr
         // allocate a new dir block
         memset(&block, 0, STZFS_BLOCK_SIZE);
     } else {
-        read_inode_data_block(inode, block_offset, &block);
+        inode_read_data_block(inode, block_offset, &block, NULL);
     }
 
     // create entry
@@ -248,9 +84,9 @@ int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr
 
     // write back dir block
     if (next_free_entry > 0) {
-        write_inode_data_block(inode, block_offset, &block);
+        inode_write_data_block(inode, block_offset, &block);
     } else {
-        alloc_inode_data_block(inode, &block);
+        inode_alloc_data_block(inode, &block);
     }
     return 0;
 }

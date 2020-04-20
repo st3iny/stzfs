@@ -16,7 +16,6 @@
 #include "fuse.h"
 #include "helpers.h"
 #include "inode.h"
-#include "read.h"
 #include "stzfs.h"
 #include "super_block_cache.h"
 #include "disk.h"
@@ -152,7 +151,7 @@ blockptr_t stzfs_makefs(inodeptr_t inode_count) {
 
     // write root inode
     inodeptr_t root_inode_ptr;
-    alloc_inode(&root_inode_ptr, &root_inode);
+    inode_alloc(&root_inode_ptr, &root_inode);
     printf("stzfs_makefs: wrote root inode with id %i\n", root_inode_ptr);
 
     return blocks;
@@ -250,7 +249,7 @@ int stzfs_open(const char* file_path, struct fuse_file_info* file_info) {
 
     // update timestamps
     touch_atime(&inode);
-    write_inode(inodeptr, &inode);
+    inode_write(inodeptr, &inode);
 
     return 0;
 }
@@ -272,7 +271,7 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
 
     inodeptr_t inodeptr = file_info->fh;
     inode_t inode;
-    read_inode(inodeptr, &inode);
+    inode_read(inodeptr, &inode);
 
     // check file bounds
     if (M_IS_DIR(inode.mode)) {
@@ -287,7 +286,7 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
 
     // update timestamps
     touch_atime(&inode);
-    write_inode(inodeptr, &inode);
+    inode_write(inodeptr, &inode);
 
     size_t read_bytes = 0;
     blockptr_t blockptr = offset / STZFS_BLOCK_SIZE;
@@ -296,7 +295,7 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
     const size_t initial_byte_offset = offset % STZFS_BLOCK_SIZE;
     if (initial_byte_offset > 0) {
         data_block block;
-        read_inode_data_block(&inode, blockptr, &block);
+        inode_read_data_block(&inode, blockptr, &block, NULL);
 
         // keep block boundaries
         read_bytes = STZFS_BLOCK_SIZE - initial_byte_offset;
@@ -310,7 +309,7 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
 
     // read full blocks
     for (; (length - read_bytes) >= STZFS_BLOCK_SIZE; blockptr++) {
-        read_inode_data_block(&inode, blockptr, &buffer[read_bytes]);
+        inode_read_data_block(&inode, blockptr, &buffer[read_bytes], NULL);
         read_bytes += STZFS_BLOCK_SIZE;
     }
 
@@ -318,7 +317,7 @@ int stzfs_read(const char* file_path, char* buffer, size_t length, off_t offset,
     const size_t diff = length - read_bytes;
     if (diff > 0) {
         data_block block;
-        read_inode_data_block(&inode, blockptr, &block);
+        inode_read_data_block(&inode, blockptr, &block, NULL);
         memcpy(&buffer[read_bytes], &block, diff);
         read_bytes += diff;
     }
@@ -343,7 +342,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
 
     inodeptr_t inodeptr = file_info->fh;
     inode_t inode;
-    read_inode(inodeptr, &inode);
+    inode_read(inodeptr, &inode);
 
     // check file size limits
     const off_t new_atom_count = MAX(offset + length, inode.atom_count);
@@ -355,16 +354,16 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
 
     // allocate null blocks to the new end of the file
     if (new_block_count > inode.block_count) {
-        alloc_inode_null_blocks(&inode, new_block_count);
+        inode_append_null_blocks(&inode, new_block_count);
     }
 
     // fill previous last block with zeroes
     const size_t last_block_inner_offset = inode.atom_count % STZFS_BLOCK_SIZE;
     if (offset > inode.atom_count && last_block_inner_offset > 0) {
         data_block block;
-        read_inode_data_block(&inode, inode.block_count - 1, &block);
+        inode_read_data_block(&inode, inode.block_count - 1, &block, NULL);
         memset(&block.data[last_block_inner_offset], 0, STZFS_BLOCK_SIZE - last_block_inner_offset);
-        write_inode_data_block(&inode, inode.block_count - 1, &block);
+        inode_write_data_block(&inode, inode.block_count - 1, &block);
     }
 
     // update timestamps
@@ -378,7 +377,7 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     blockptr_t blockptr = offset / STZFS_BLOCK_SIZE;
     if (initial_byte_offset > 0) {
         data_block block;
-        read_inode_data_block(&inode, blockptr, &block);
+        inode_read_data_block(&inode, blockptr, &block, NULL);
 
         // keep block boundaries
         written_bytes = STZFS_BLOCK_SIZE - initial_byte_offset;
@@ -387,13 +386,13 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
         }
 
         memcpy(&block.data[initial_byte_offset], buffer, written_bytes);
-        write_inode_data_block(&inode, blockptr, &block);
+        inode_write_data_block(&inode, blockptr, &block);
         blockptr++;
     }
 
     // write aligned full blocks
     for (; (length - written_bytes) >= STZFS_BLOCK_SIZE; blockptr++) {
-        write_inode_data_block(&inode, blockptr, &buffer[written_bytes]);
+        inode_write_data_block(&inode, blockptr, &buffer[written_bytes]);
         written_bytes += STZFS_BLOCK_SIZE;
     }
 
@@ -401,15 +400,15 @@ int stzfs_write(const char* file_path, const char* buffer, size_t length, off_t 
     const size_t diff = length - written_bytes;
     if (diff > 0) {
         data_block block;
-        read_inode_data_block(&inode, blockptr, &block);
+        inode_read_data_block(&inode, blockptr, &block, NULL);
 
         memcpy(&block, &buffer[written_bytes], diff);
-        write_inode_data_block(&inode, blockptr, &block);
+        inode_write_data_block(&inode, blockptr, &block);
         written_bytes += diff;
     }
 
     inode.atom_count = new_atom_count;
-    write_inode(inodeptr, &inode);
+    inode_write(inodeptr, &inode);
 
     return written_bytes;
 }
@@ -445,9 +444,9 @@ int stzfs_create(const char* file_path, mode_t mode, struct fuse_file_info* file
     inode.ctime = now;
     inode.link_count = 1;
 
-    alloc_inode(&inodeptr, &inode);
+    inode_alloc(&inodeptr, &inode);
     alloc_dir_entry(&parent_inode, last_name, inodeptr);
-    write_inode(parent_inodeptr, &parent_inode);
+    inode_write(parent_inodeptr, &parent_inode);
 
     file_info->fh = inodeptr;
     return 0;
@@ -503,30 +502,30 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
     // replace dst with src
     src.inode.link_count++;
     touch_ctime(&src.inode);
-    write_inode(src.inodeptr, &src.inode);
+    inode_write(src.inodeptr, &src.inode);
 
     if (dst_exists) {
         write_dir_entry(&dst_parent.inode, dst_last_name, src.inodeptr);
         dst.inode.link_count--;
         if (dst.inode.link_count <= 0) {
-            free_inode(dst.inodeptr, &dst.inode);
+            inode_free(dst.inodeptr, &dst.inode);
         } else {
-            write_inode(dst.inodeptr, &dst.inode);
+            inode_write(dst.inodeptr, &dst.inode);
         }
     } else {
         alloc_dir_entry(&dst_parent.inode, dst_last_name, src.inodeptr);
-        write_inode(dst_parent.inodeptr, &dst_parent.inode);
+        inode_write(dst_parent.inodeptr, &dst_parent.inode);
     }
 
     // rewrite double dot inodeptr
     if (M_IS_DIR(src.inode.mode) && src_parent.inodeptr != dst_parent.inodeptr) {
         dst_parent.inode.link_count++;
-        write_inode(dst_parent.inodeptr, &dst_parent.inode);
+        inode_write(dst_parent.inodeptr, &dst_parent.inode);
 
         write_dir_entry(&src.inode, "..", dst_parent.inodeptr);
 
         src_parent.inode.link_count--;
-        write_inode(src_parent.inodeptr, &src_parent.inode);
+        inode_write(src_parent.inodeptr, &src_parent.inode);
     }
 
     if (src_parent.inodeptr == dst_parent.inodeptr) {
@@ -535,10 +534,10 @@ int stzfs_rename(const char* src_path, const char* dst_path, unsigned int flags)
 
     // unlink src from parent directory
     free_dir_entry(&src_parent.inode, src_last_name);
-    write_inode(src_parent.inodeptr, &src_parent.inode);
+    inode_write(src_parent.inodeptr, &src_parent.inode);
 
     src.inode.link_count--;
-    write_inode(src.inodeptr, &src.inode);
+    inode_write(src.inodeptr, &src.inode);
 }
 
 // unlink a file
@@ -585,7 +584,7 @@ int stzfs_mkdir(const char* path, mode_t mode) {
 
     // allocate new inode
     {
-        const int err = alloc_inodeptr(&dir.inodeptr);
+        const int err = inode_allocptr(&dir.inodeptr);
         if (err) {
             printf("stzfs_mkdir: could not allocate directory inode\n");
             return err;
@@ -612,7 +611,7 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     // TODO: check inode bounds
     // increase parent inode link counter
     parent.inode.link_count++;
-    write_inode(parent.inodeptr, &parent.inode);
+    inode_write(parent.inodeptr, &parent.inode);
 
     struct fuse_context* context = fuse_get_context();
 
@@ -629,11 +628,11 @@ int stzfs_mkdir(const char* path, mode_t mode) {
     dir.inode.mtime = now;
     dir.inode.ctime = now;
     dir.inode.data_direct[0] = blockptr;
-    write_inode(dir.inodeptr, &dir.inode);
+    inode_write(dir.inodeptr, &dir.inode);
 
     // allocate entry in parent dir
     alloc_dir_entry(&parent.inode, name, dir.inodeptr);
-    write_inode(parent.inodeptr, &parent.inode);
+    inode_write(parent.inodeptr, &parent.inode);
 
     return 0;
 }
@@ -666,7 +665,7 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
 
     // update timestamps
     touch_atime(&dir.inode);
-    write_inode(dir.inodeptr, &dir.inode);
+    inode_write(dir.inodeptr, &dir.inode);
 
 #if STZFS_SHOW_DOUBLE_DOTS_IN_ROOT_DIR
     if (strcmp(path, "/") == 0) {
@@ -676,7 +675,8 @@ int stzfs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t 
 
     for (blockptr_t offset = 0; offset < dir.inode.block_count; offset++) {
         dir_block block;
-        const blockptr_t blockptr = read_inode_data_block(&dir.inode, offset, &block);
+        blockptr_t blockptr;
+        inode_read_data_block(&dir.inode, offset, &block, &blockptr);
         if (blockptr == 0) {
             printf("stzfs_readdir: can't read directory block\n");
             return -EFAULT;
@@ -719,7 +719,7 @@ int stzfs_chown(const char* path, uid_t uid, gid_t gid, struct fuse_file_info* f
         find_file_inode2(path, &f, NULL, NULL);
     } else {
         f.inodeptr = fi->fh;
-        read_inode(f.inodeptr, &f.inode);
+        inode_read(f.inodeptr, &f.inode);
     }
 
     if (f.inodeptr == 0) {
@@ -733,7 +733,7 @@ int stzfs_chown(const char* path, uid_t uid, gid_t gid, struct fuse_file_info* f
 
     f.inode.uid = uid;
     f.inode.gid = gid;
-    write_inode(f.inodeptr, &f.inode);
+    inode_write(f.inodeptr, &f.inode);
 
     return 0;
 }
@@ -747,7 +747,7 @@ int stzfs_chmod(const char* path, mode_t mode, struct fuse_file_info* fi) {
         find_file_inode2(path, &f, NULL, NULL);
     } else {
         f.inodeptr = fi->fh;
-        read_inode(f.inodeptr, &f.inode);
+        inode_read(f.inodeptr, &f.inode);
     }
 
     if (f.inodeptr == 0) {
@@ -760,7 +760,7 @@ int stzfs_chmod(const char* path, mode_t mode, struct fuse_file_info* fi) {
     touch_ctime(&f.inode);
 
     f.inode.mode = mode_posix_to_stzfs(mode);
-    write_inode(f.inodeptr, &f.inode);
+    inode_write(f.inodeptr, &f.inode);
 
     return 0;
 }
@@ -774,7 +774,7 @@ int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
         find_file_inode2(path, &f, NULL, NULL);
     } else {
         f.inodeptr = fi->fh;
-        read_inode(f.inodeptr, &f.inode);
+        inode_read(f.inodeptr, &f.inode);
     }
 
     if (f.inodeptr == 0) {
@@ -790,10 +790,10 @@ int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
     const blockptr_t new_block_count = DIV_CEIL(offset, STZFS_BLOCK_SIZE);
 
     if (offset > f.inode.atom_count) {
-        alloc_inode_null_blocks(&f.inode, new_block_count);
+        inode_append_null_blocks(&f.inode, new_block_count);
     } else if (offset < f.inode.atom_count) {
         if (new_block_count < f.inode.block_count) {
-            free_inode_data_blocks(&f.inode, new_block_count);
+            inode_truncate(&f.inode, new_block_count);
         }
         touch_mtime_and_ctime(&f.inode);
     }
@@ -804,7 +804,7 @@ int stzfs_truncate(const char* path, off_t offset, struct fuse_file_info* fi) {
 
     f.inode.atom_count = offset;
     touch_atime(&f.inode);
-    write_inode(f.inodeptr, &f.inode);
+    inode_write(f.inodeptr, &f.inode);
 
     return 0;
 }
@@ -818,7 +818,7 @@ int stzfs_utimens(const char* path, const struct timespec tv[2], struct fuse_fil
         find_file_inode2(path, &f, NULL, NULL);
     } else {
         f.inodeptr = fi->fh;
-        read_inode(f.inodeptr, &f.inode);
+        inode_read(f.inodeptr, &f.inode);
     }
 
     if (f.inodeptr == 0) {
@@ -829,7 +829,7 @@ int stzfs_utimens(const char* path, const struct timespec tv[2], struct fuse_fil
     f.inode.atime = tv[0];
     f.inode.mtime = tv[1];
     touch_ctime(&f.inode);
-    write_inode(f.inodeptr, &f.inode);
+    inode_write(f.inodeptr, &f.inode);
 
     return 0;
 }
@@ -862,10 +862,10 @@ int stzfs_link(const char* src, const char* dest) {
     touch_mtime_and_ctime(&dest_parent.inode);
 
     src_file.inode.link_count++;
-    write_inode(src_file.inodeptr, &src_file.inode);
+    inode_write(src_file.inodeptr, &src_file.inode);
 
     alloc_dir_entry(&dest_parent.inode, dest_last_name, src_file.inodeptr);
-    write_inode(dest_parent.inodeptr, &dest_parent.inode);
+    inode_write(dest_parent.inodeptr, &dest_parent.inode);
 
     return 0;
 }
@@ -899,9 +899,9 @@ int stzfs_symlink(const char* target, const char* link_name) {
     symlink.inode.ctime = now;
     symlink.inode.link_count = 1;
 
-    alloc_inode(&symlink.inodeptr, &symlink.inode);
+    inode_alloc(&symlink.inodeptr, &symlink.inode);
     alloc_dir_entry(&symlink_parent.inode, symlink_last_name, symlink.inodeptr);
-    write_inode(symlink_parent.inodeptr, &symlink_parent.inode);
+    inode_write(symlink_parent.inodeptr, &symlink_parent.inode);
 
     // write target to symbolic link data blocks
     const size_t target_length = strlen(target);
@@ -911,10 +911,10 @@ int stzfs_symlink(const char* target, const char* link_name) {
     memset(buffer + target_length, 0, buffer_length - target_length);
 
     for (size_t offset = 0; offset < buffer_length; offset += STZFS_BLOCK_SIZE) {
-        alloc_inode_data_block(&symlink.inode, buffer + offset);
+        inode_alloc_data_block(&symlink.inode, buffer + offset);
     }
     symlink.inode.atom_count = target_length;
-    write_inode(symlink.inodeptr, &symlink.inode);
+    inode_write(symlink.inodeptr, &symlink.inode);
     free(buffer);
 
     return 0;
@@ -938,10 +938,10 @@ int stzfs_readlink(const char* path, char* buffer, size_t length) {
     }
 
     touch_atime(&symlink.inode);
-    write_inode(symlink.inodeptr, &symlink.inode);
+    inode_write(symlink.inodeptr, &symlink.inode);
 
     data_block data_blocks[symlink.inode.block_count];
-    read_inode_data_blocks(&symlink.inode, data_blocks, symlink.inode.block_count, 0);
+    inode_read_data_blocks(&symlink.inode, data_blocks, symlink.inode.block_count, 0);
 
     const size_t data_length = MIN(length - 1, symlink.inode.atom_count);
     memcpy(buffer, data_blocks, data_length);

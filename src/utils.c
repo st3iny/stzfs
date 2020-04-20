@@ -7,12 +7,12 @@
 #include <unistd.h>
 
 #include "blocks.h"
-#include "read.h"
-#include "types.h"
+#include "disk.h"
+#include "inode.h"
 #include "stzfs.h"
 #include "super_block_cache.h"
+#include "types.h"
 #include "utils.h"
-#include "disk.h"
 
 // helpers
 static void utils_print_block_range(blockptr_t offset, blockptr_t length);

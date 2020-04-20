@@ -7,7 +7,7 @@
 #include "find.h"
 #include "free.h"
 #include "helpers.h"
-#include "read.h"
+#include "inode.h"
 #include "write.h"
 
 // check if file exists
@@ -74,13 +74,13 @@ int unlink_file_or_dir(const char* path, int allow_dir) {
     }
 
     free_dir_entry(&parent.inode, name);
-    write_inode(parent.inodeptr, &parent.inode);
+    inode_write(parent.inodeptr, &parent.inode);
 
     f.inode.link_count--;
     if (f.inode.link_count == 0) {
-        free_inode(f.inodeptr, &f.inode);
+        inode_free(f.inodeptr, &f.inode);
     } else {
-        write_inode(f.inodeptr, &f.inode);
+        inode_write(f.inodeptr, &f.inode);
     }
 
     return 0;

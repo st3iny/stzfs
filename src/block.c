@@ -14,7 +14,6 @@
 
 // read block from disk
 stzfs_error_t block_read(int64_t blockptr, void* block) {
-    LOG("read block %i", blockptr);
     if (blockptr == SUPER_BLOCKPTR) {
         LOG("trying to read protected super block");
         return ERROR;

@@ -8,117 +8,9 @@
 #include "blocks.h"
 #include "free.h"
 #include "helpers.h"
-#include "read.h"
+#include "inode.h"
 #include "super_block_cache.h"
 #include "write.h"
-
-// free inode and allocated data blocks
-int free_inode(inodeptr_t inodeptr, inode_t* inode) {
-    if (inodeptr <= 1) {
-        printf("free_inode: trying to free protected inode\n");
-        return -EFAULT;
-    } else if (M_IS_DIR(inode->mode) && inode->atom_count > 2) {
-        printf("free_inode: directory is not empty\n");
-        return -ENOTEMPTY;
-    } else if (M_IS_DIR(inode->mode) && inode->link_count > 1) {
-        printf("free_inode: directory inode link count too high\n");
-        return -EPERM;
-    } else if (!M_IS_DIR(inode->mode) && inode->link_count > 0) {
-        printf("free_inode: file inode link count too high\n");
-        return -EPERM;
-    }
-
-    // dealloc inode first
-    int err = free_bitmap(&inode_bitmap_cache, inodeptr);
-    if (err) return err;
-
-    // free allocated data blocks in bitmap
-    free_inode_data_blocks(inode, 0);
-
-    return 0;
-}
-
-// truncate inode data blocks to given offset
-int free_inode_data_blocks(inode_t* inode, blockptr_t offset) {
-    // FIXME: implement proper algorithm (merge with free_last_inode_data_block)
-    for (blockptr_t block_count = inode->block_count; block_count > offset; block_count--) {
-        free_last_inode_data_block(inode);
-    }
-
-    return 0;
-}
-
-// free the last data block of an inode
-int free_last_inode_data_block(inode_t* inode) {
-    if (inode->block_count <= 0) {
-        return 0;
-    }
-
-    typedef struct level {
-        int64_t blockptr;
-        indirect_block block;
-    } level;
-
-    inode->block_count--;
-    int64_t offset = inode->block_count;
-    int64_t absolute_blockptr = 0;
-    if (offset < INODE_DIRECT_BLOCKS) {
-        absolute_blockptr = inode->data_direct[offset];
-
-        // FIXME: just for debugging
-        inode->data_direct[offset] = 0;
-    } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
-        level level1 = {.blockptr = inode->data_single_indirect};
-        block_read(level1.blockptr, &level1.block);
-        absolute_blockptr = level1.block.blocks[offset];
-
-        if (offset == 0) {
-            block_free(&level1.blockptr, 1);
-
-            // FIXME: just for debugging
-            inode->data_single_indirect = 0;
-        }
-    } else if ((offset -= INODE_SINGLE_INDIRECT_BLOCKS) < INODE_DOUBLE_INDIRECT_BLOCKS) {
-        level level1 = {.blockptr = inode->data_double_indirect};
-        block_read(level1.blockptr, &level1.block);
-
-        level level2 = {.blockptr = level1.block.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS]};
-        block_read(level2.blockptr, &level2.block);
-        absolute_blockptr = level2.block.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS];
-
-        if (offset == 0) {
-            block_free(&level1.blockptr, 1);
-
-            // FIXME: just for debugging
-            inode->data_double_indirect = 0;
-        }
-        if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) block_free(&level2.blockptr, 1);
-    } else if ((offset -= INODE_DOUBLE_INDIRECT_BLOCKS) < INODE_TRIPLE_INDIRECT_BLOCKS) {
-        level level1 = {.blockptr = inode->data_triple_indirect};
-        block_read(level1.blockptr, &level1.block);
-
-        level level2 = {.blockptr = level1.block.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS]};
-        block_read(level2.blockptr, &level2.block);
-
-        level level3 = {.blockptr = level2.block.blocks[offset % INODE_DOUBLE_INDIRECT_BLOCKS]};
-        block_read(level3.blockptr, &level3.block);
-        absolute_blockptr = level3.block.blocks[offset % INODE_SINGLE_INDIRECT_BLOCKS];
-
-        if (offset == 0) {
-            block_free(&level1.blockptr, 1);
-
-            // FIXME: just for debugging
-            inode->data_triple_indirect = 0;
-        }
-        if (offset % INODE_DOUBLE_INDIRECT_BLOCKS == 0) block_free(&level2.blockptr, 1);
-        if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) block_free(&level3.blockptr, 1);
-    } else {
-        printf("free_last_inode_data_block: relative data offset out of bounds\n");
-    }
-
-    if (absolute_blockptr) block_free(&absolute_blockptr, 1);
-    return 0;
-}
 
 // free entry in bitmap
 int free_bitmap(bitmap_cache_t* cache, objptr_t index) {
@@ -158,7 +50,8 @@ int free_dir_entry(inode_t* inode, const char* name) {
     blockptr_t free_entry_offset;
     dir_block free_entry_block;
     for (blockptr_t offset = 0; offset < inode->block_count && !entry_found; offset++) {
-        const blockptr_t blockptr = read_inode_data_block(inode, offset, &free_entry_block);
+        blockptr_t blockptr;
+        inode_read_data_block(inode, offset, &free_entry_block, &blockptr);
         if (blockptr == 0) {
             printf("free_dir_entry: can't read directory block\n");
             return -EFAULT;
@@ -193,7 +86,9 @@ int free_dir_entry(inode_t* inode, const char* name) {
             entry = free_entry_block.entries[last_entry];
         } else {
             dir_block last_block;
-            if (read_inode_data_block(inode, last_entry_offset, &last_block) == 0) {
+            blockptr_t read_directory_blockptr;
+            inode_read_data_block(inode, last_entry_offset, &last_block, &read_directory_blockptr);
+            if (read_directory_blockptr == 0) {
                 printf("free_dir_entry: can't read directory block\n");
                 return -EFAULT;
             }
@@ -201,12 +96,12 @@ int free_dir_entry(inode_t* inode, const char* name) {
         }
 
         free_entry_block.entries[free_entry] = entry;
-        write_inode_data_block(inode, free_entry_offset, &free_entry_block);
+        inode_write_data_block(inode, free_entry_offset, &free_entry_block);
     }
 
     if (last_entry == 0) {
         // the whole last block can be deleted
-        free_last_inode_data_block(inode);
+        inode_free_last_data_block(inode);
     }
 
     inode->atom_count--;

@@ -1,9 +1,11 @@
 #ifndef STZFS_INODE_H
 #define STZFS_INODE_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <time.h>
 
+#include "error.h"
 #include "types.h"
 
 // blocks each direction/indirection level can hold
@@ -44,5 +46,21 @@ typedef struct file {
     inodeptr_t inodeptr;
     inode_t inode;
 } file;
+
+// functions
+stzfs_error_t inode_allocptr(int64_t* inodeptr);
+stzfs_error_t inode_alloc(int64_t* inodeptr, const inode_t* inode);
+stzfs_error_t inode_append_data_blockptr(inode_t* inode, int64_t blockptr);
+stzfs_error_t inode_alloc_data_block(inode_t* inode, const void* block);
+stzfs_error_t inode_append_null_blocks(inode_t* inode, int64_t block_count);
+stzfs_error_t inode_free(int64_t inodeptr, inode_t* inode);
+stzfs_error_t inode_truncate(inode_t* inode, int64_t offset);
+stzfs_error_t inode_free_last_data_block(inode_t* inode);
+stzfs_error_t inode_read(int64_t inodeptr, inode_t* inode);
+stzfs_error_t inode_read_data_block(inode_t* inode, int64_t offset, void* block, int64_t* blockptr_out);
+stzfs_error_t inode_read_data_blocks(inode_t* inode, void* block_arr, size_t length, int64_t offset);
+stzfs_error_t inode_write(int64_t inodeptr, const inode_t* inode);
+stzfs_error_t inode_write_data_block(inode_t* inode, int64_t offset, const void* block);
+stzfs_error_t inode_write_or_alloc_data_block(inode_t* inode, int64_t offset, const void* block);
 
 #endif // STZFS_INODE_H

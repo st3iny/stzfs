@@ -10,7 +10,7 @@
 #include "blocks.h"
 #include "find.h"
 #include "helpers.h"
-#include "read.h"
+#include "inode.h"
 #include "super_block_cache.h"
 #include "write.h"
 
@@ -21,7 +21,7 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
 
     // start at root inode
     *inodeptr = 1;
-    read_inode(*inodeptr, inode);
+    inode_read(*inodeptr, inode);
 
     if (strcmp(file_path, "/") == 0 ) {
         if (parent_inodeptr) *parent_inodeptr = 0;
@@ -58,7 +58,7 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
             if (found_inodeptr) {
                 // go to the next level of path
                 *inodeptr = found_inodeptr;
-                read_inode(*inodeptr, inode);
+                inode_read(*inodeptr, inode);
             } else {
                 // if this is the last level a new file is allowed
                 not_existing = true;
@@ -94,7 +94,8 @@ int find_name(const char* name, inode_t* inode, inodeptr_t* found_inodeptr) {
     // read directory blocks and search them
     for (blockptr_t offset = 0; offset < inode->block_count; offset++) {
         dir_block block;
-        const blockptr_t blockptr = read_inode_data_block(inode, offset, &block);
+        blockptr_t blockptr;
+        inode_read_data_block(inode, offset, &block, &blockptr);
         if (blockptr == 0) {
             printf("find_name: can't read directory block\n");
             return -EFAULT;
