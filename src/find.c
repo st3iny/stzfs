@@ -185,7 +185,7 @@ int64_t find_inode_data_blockptr(inode_t* inode, int64_t offset, bool alloc_spar
 // find inode blockptrs and store them in the given buffer
 int find_inode_data_blockptrs(inode_t* inode, int64_t* blockptrs, int64_t length,
                               int64_t offset) {
-    if (offset + length >= inode->block_count) {
+    if (offset + length > inode->block_count) {
         printf("find_inode_data_blockptrs: relative data block offset out of range\n");
         return -EFAULT;
     }

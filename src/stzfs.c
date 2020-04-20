@@ -943,7 +943,7 @@ int stzfs_readlink(const char* path, char* buffer, size_t length) {
 
     const size_t data_length = MIN(length - 1, symlink.inode.atom_count);
     memcpy(buffer, data_blocks, data_length);
-    buffer[data_length] = '\0';
+    buffer[data_length] = 0;
 
     return 0;
 }

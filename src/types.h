@@ -49,7 +49,7 @@ typedef uint32_t objptr_t;
 #define BLOCKPTR_ERROR ((int64_t)-2)
 
 // maximum value for object pointers
-#define INODEPTR_MAX(super_block) MIN((inodeptr_t)-2, super_block->free_inodes)
+#define INODEPTR_MAX(super_block) MIN((inodeptr_t)-1, super_block->inode_count)
 #define BLOCKPTR_MAX ((inodeptr_t)-2)
 
 // special block pointer

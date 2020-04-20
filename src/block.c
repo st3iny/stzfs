@@ -35,11 +35,11 @@ stzfs_error_t block_read(int64_t blockptr, void* block) {
 // read multiple blocks from disk
 stzfs_error_t block_readall(const int64_t* blockptr_arr, void* blocks, size_t length) {
     for (size_t i = 0; i < length; i++) {
-        blocks += STZFS_BLOCK_SIZE;
         if (block_read(blockptr_arr[i], blocks)) {
             LOG("could not read block");
             return ERROR;
         }
+        blocks += STZFS_BLOCK_SIZE;
     }
 
     return SUCCESS;
