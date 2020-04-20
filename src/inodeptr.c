@@ -13,7 +13,7 @@
 // true, if given inodeptr is a valid (readable and writable) inode pointer
 bool inodeptr_is_valid(int64_t inodeptr) {
     return inodeptr > 0 &&
-           inodeptr <= INODEPTR_MAX(&super_block_cache) &&
+           inodeptr <= INODEPTR_MAX(super_block_cache) &&
            inodeptr != INODEPTR_ERROR;
 }
 
