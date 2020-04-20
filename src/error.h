@@ -8,7 +8,6 @@
 #include <stdbool.h>
 
 typedef bool stzfs_error_t;
-#define SUCCESS false
-#define ERROR true
+enum { SUCCESS = false, ERROR = true};
 
 #endif // STZFS_ERROR_H
