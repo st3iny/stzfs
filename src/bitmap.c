@@ -105,7 +105,7 @@ stzfs_error_t bitmap_alloc_block(int64_t* blockptr) {
         return ERROR;
     }
 
-    return bitmap_alloc(blockptr, &block_bitmap_cache);
+    return bitmap_alloc(&block_bitmap_cache, blockptr);
 }
 
 // alloc new inode in inode bitmap
@@ -115,7 +115,7 @@ stzfs_error_t bitmap_alloc_inode(int64_t* inodeptr) {
         return ERROR;
     }
 
-    return bitmap_alloc(inodeptr, &inode_bitmap_cache);
+    return bitmap_alloc(&inode_bitmap_cache, inodeptr);
 }
 
 // free block in block bitmap
@@ -125,7 +125,7 @@ stzfs_error_t bitmap_free_block(int64_t blockptr) {
         return ERROR;
     }
 
-    return bitmap_free(blockptr, &block_bitmap_cache);
+    return bitmap_free(&block_bitmap_cache, blockptr);
 }
 
 // free inode in inode bitmap
@@ -135,5 +135,5 @@ stzfs_error_t bitmap_free_inode(int64_t inodeptr) {
         return ERROR;
     }
 
-    return bitmap_free(inodeptr, &inode_bitmap_cache);
+    return bitmap_free(&inode_bitmap_cache, inodeptr);
 }
