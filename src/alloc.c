@@ -12,42 +12,6 @@
 #include "super_block_cache.h"
 #include "write.h"
 
-static void alloc_inode_data_blockptr(inode_t* inode, blockptr_t blockptr);
-
-// alloc entry in bitmap
-int alloc_bitmap(objptr_t* index, bitmap_cache_t* cache) {
-    objptr_t next_free = 0;
-    for (size_t i = cache->next; i < cache->length && !next_free; i += sizeof(bitmap_entry_t)) {
-        bitmap_entry_t* entry = (bitmap_entry_t*)(cache->bitmap + i);
-        if (~*entry == 0) {
-            continue;
-        }
-
-        cache->next = i;
-
-        // there is at least one free alloc available
-        bitmap_entry_t data = *entry;
-        int offset = 0;
-        while (offset < sizeof(bitmap_entry_t) * 8 && (data & 1) != 0) {
-            data >>= 1;
-            offset++;
-        }
-
-        // mark alloc in bitmap
-        bitmap_entry_t new_entry = 1;
-        *entry |= new_entry << offset;
-        next_free = i * 8 + offset;
-    }
-
-    if (!next_free) {
-        printf("alloc_entry: could not allocate entry in bitmap\n");
-        return -ENOSPC;
-    }
-
-    *index = next_free;
-    return 0;
-}
-
 // alloc an entry in a directory inode
 int alloc_dir_entry(inode_t* inode, const char* name, inodeptr_t target_inodeptr) {
     // set max_link_count to 0xffff - 1 to prevent a deadlock

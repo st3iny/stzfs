@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "alloc.h"
+#include "bitmap.h"
 #include "bitmap_cache.h"
 #include "block.h"
 #include "blockptr.h"
@@ -25,7 +26,7 @@ stzfs_error_t inode_allocptr(int64_t* inodeptr) {
         return ERROR;
     }
 
-    alloc_bitmap(inodeptr, &inode_bitmap_cache);
+    bitmap_alloc(inodeptr, &inode_bitmap_cache);
 
     // update superblock
     sb->free_inodes--;
@@ -205,7 +206,7 @@ stzfs_error_t inode_free(int64_t inodeptr, inode_t* inode) {
     }
 
     // dealloc inode first
-    free_bitmap(&inode_bitmap_cache, inodeptr);
+    bitmap_free(&inode_bitmap_cache, inodeptr);
 
     // free allocated data blocks in bitmap
     inode_truncate(inode, 0);

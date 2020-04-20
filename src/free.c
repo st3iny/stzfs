@@ -12,25 +12,6 @@
 #include "super_block_cache.h"
 #include "write.h"
 
-// free entry in bitmap
-int free_bitmap(bitmap_cache_t* cache, objptr_t index) {
-    if (index >= cache->length * 8) {
-        printf("free_bitmap: bitmap index out of bounds\n");
-        return -EINVAL;
-    }
-
-    const size_t entry_offset = index / (sizeof(bitmap_entry_t) * 8);
-    const size_t inner_offset = index % (sizeof(bitmap_entry_t) * 8);
-    bitmap_entry_t* entry = (bitmap_entry_t*)(cache->bitmap + entry_offset);
-    *entry ^= (bitmap_entry_t)1 << inner_offset;
-
-    if (entry_offset < cache->next) {
-        cache->next = entry_offset;
-    }
-
-    return 0;
-}
-
 // free entry from directory
 int free_dir_entry(inode_t* inode, const char* name) {
     if (!M_IS_DIR(inode->mode)) {
