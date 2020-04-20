@@ -23,10 +23,7 @@ stzfs_error_t block_read(int64_t blockptr, void* block) {
     if (blockptr == NULL_BLOCKPTR) {
         memset(block, 0, STZFS_BLOCK_SIZE);
     } else {
-        if (disk_read((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE)) {
-            LOG("could not read block from disk");
-            return ERROR;
-        }
+        disk_read((off_t)blockptr * STZFS_BLOCK_SIZE, block, STZFS_BLOCK_SIZE);
     }
 
     return SUCCESS;
@@ -35,10 +32,7 @@ stzfs_error_t block_read(int64_t blockptr, void* block) {
 // read multiple blocks from disk
 stzfs_error_t block_readall(const int64_t* blockptr_arr, void* blocks, size_t length) {
     for (size_t i = 0; i < length; i++) {
-        if (block_read(blockptr_arr[i], blocks)) {
-            LOG("could not read block");
-            return ERROR;
-        }
+        block_read(blockptr_arr[i], blocks);
         blocks += STZFS_BLOCK_SIZE;
     }
 
@@ -90,11 +84,12 @@ stzfs_error_t block_allocptr(int64_t* blockptr) {
 
 // allocate and write new block in place
 stzfs_error_t block_alloc(int64_t* blockptr, const void* block) {
-    if (block_allocptr(blockptr)) {
-        LOG("could not allocate new block");
+    if (super_block_cache->free_blocks <= 0) {
+        LOG("no free blocks availabe");
         return ERROR;
     }
 
+    block_allocptr(blockptr);
     block_write(*blockptr, block);
     return SUCCESS;
 }

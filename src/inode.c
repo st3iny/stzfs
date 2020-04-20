@@ -50,17 +50,11 @@ stzfs_error_t inode_alloc(int64_t* inodeptr, const inode_t* inode) {
     const int64_t inode_table_offset = *inodeptr / INODE_BLOCK_ENTRIES;
     const int64_t inode_table_blockptr = sb->inode_table + inode_table_offset;
     inode_block inode_table_block;
-    if (block_read(inode_table_blockptr, &inode_table_block)) {
-        LOG("could not read inode table block");
-        return ERROR;
-    }
+    block_read(inode_table_blockptr, &inode_table_block);
 
     // place inode into table and write table block
     inode_table_block.inodes[*inodeptr % INODE_BLOCK_ENTRIES] = *inode;
-    if (block_write(inode_table_blockptr, &inode_table_block)) {
-        LOG("could not write inode table block");
-        return ERROR;
-    }
+    block_write(inode_table_blockptr, &inode_table_block);
 
     return SUCCESS;
 }
@@ -330,14 +324,9 @@ stzfs_error_t inode_read(int64_t inodeptr, inode_t* inode) {
 
     const super_block* sb = super_block_cache;
 
-    int64_t inode_table_block_offset = inodeptr / (STZFS_BLOCK_SIZE / sizeof(inode_t));
-    if (inode_table_block_offset >= sb->inode_table_length) {
-        LOG("out of bounds while trying to read inode");
-        return ERROR;
-    }
-
     // get inode table block
-    int64_t inode_table_blockptr = sb->inode_table + inode_table_block_offset;
+    const int64_t inode_table_block_offset = inodeptr / (STZFS_BLOCK_SIZE / sizeof(inode_t));
+    const int64_t inode_table_blockptr = sb->inode_table + inode_table_block_offset;
     inode_block inode_table_block;
     block_read(inode_table_blockptr, &inode_table_block);
 
