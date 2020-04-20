@@ -10,7 +10,7 @@
 #include "fuse.h"
 #include "types.h"
 
-blockptr_t stzfs_makefs(inodeptr_t inode_count);
+int64_t stzfs_makefs(int64_t inode_count);
 
 void* stzfs_fuse_init(struct fuse_conn_info* conn, struct fuse_config* cfg);
 void stzfs_init(void);

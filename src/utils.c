@@ -6,6 +6,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "block.h"
 #include "blocks.h"
 #include "disk.h"
 #include "inode.h"
@@ -15,12 +16,12 @@
 #include "utils.h"
 
 // helpers
-static void utils_print_block_range(blockptr_t offset, blockptr_t length);
-static bool utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap,
-                                  blockptr_t block_bitmap_length);
-static void utils_print_allocation_status(const char* title, blockptr_t alloc_start,
-                                          blockptr_t alloc_end, blockptr_t bitmap_offset,
-                                          blockptr_t bitmap_length);
+static void utils_print_block_range(int64_t offset, int64_t length);
+static bool utils_bitmap_allocated(int64_t ptr, int64_t block_bitmap,
+                                  int64_t block_bitmap_length);
+static void utils_print_allocation_status(const char* title, int64_t alloc_start,
+                                          int64_t alloc_end, int64_t bitmap_offset,
+                                          int64_t bitmap_length);
 
 // cli entry point
 int main(int argc, char** argv) {
@@ -112,7 +113,7 @@ void utils_print_inode_table(const char* arg) {
 }
 
 void utils_print_block(const char* arg) {
-    blockptr_t blockptr = strtol(arg, NULL, 10);
+    int64_t blockptr = strtol(arg, NULL, 10);
     data_block block;
     block_read(blockptr, &block);
 
@@ -123,8 +124,8 @@ void utils_print_block(const char* arg) {
 void utils_print_inode(const char* arg) {
     const super_block* sb = super_block_cache;
 
-    inodeptr_t inodeptr = strtol(arg, NULL, 10);
-    blockptr_t inode_table_block_offset = inodeptr / (STZFS_BLOCK_SIZE / INODE_SIZE);
+    int64_t inodeptr = strtol(arg, NULL, 10);
+    int64_t inode_table_block_offset = inodeptr / (STZFS_BLOCK_SIZE / INODE_SIZE);
 
     if (inode_table_block_offset > sb->inode_table_length) {
         fprintf(stderr, "out of bound while trying to read inode at %i\n", inodeptr);
@@ -161,7 +162,7 @@ void utils_print_inode(const char* arg) {
 
     printf("\tdata_direct = [");
     for (int i = 0; i < INODE_DIRECT_BLOCKS; i++) {
-        const blockptr_t blockptr = inode_data->data_direct[i];
+        const int64_t blockptr = inode_data->data_direct[i];
         if (blockptr == NULL_BLOCKPTR) {
             printf("NULL");
         } else {
@@ -180,17 +181,17 @@ void utils_print_inode(const char* arg) {
 }
 
 // helpers
-void utils_print_block_range(blockptr_t offset, blockptr_t length) {
-    for (blockptr_t blockptr = offset; blockptr < offset + length; blockptr++) {
+void utils_print_block_range(int64_t offset, int64_t length) {
+    for (int64_t blockptr = offset; blockptr < offset + length; blockptr++) {
         data_block block;
         block_read(blockptr, &block);
         write(1, &block, STZFS_BLOCK_SIZE);
     }
 }
 
-bool utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap, blockptr_t block_bitmap_length) {
-    blockptr_t bitmap_block_offset = ptr / (STZFS_BLOCK_SIZE * 8);
-    blockptr_t inner_offset = (ptr / (sizeof(bitmap_entry_t) * 8)) % BITMAP_BLOCK_ENTRIES;
+bool utils_bitmap_allocated(int64_t ptr, int64_t block_bitmap, int64_t block_bitmap_length) {
+    int64_t bitmap_block_offset = ptr / (STZFS_BLOCK_SIZE * 8);
+    int64_t inner_offset = (ptr / (sizeof(bitmap_entry_t) * 8)) % BITMAP_BLOCK_ENTRIES;
 
     if (bitmap_block_offset >= block_bitmap_length) {
         fprintf(stderr, "out of bounds while trying to check bitmap allocation at %i\n", bitmap_block_offset);
@@ -206,13 +207,13 @@ bool utils_bitmap_allocated(blockptr_t ptr, blockptr_t block_bitmap, blockptr_t 
     return (entry >> (ptr % (sizeof(bitmap_entry_t) * 8))) & 1;
 }
 
-void utils_print_allocation_status(const char* title, blockptr_t alloc_start, blockptr_t alloc_end, blockptr_t bitmap_offset, blockptr_t bitmap_length) {
+void utils_print_allocation_status(const char* title, int64_t alloc_start, int64_t alloc_end, int64_t bitmap_offset, int64_t bitmap_length) {
     printf("allocated_%s = [\n", title);
 
     bool begin_set = false;
     bool end_set = false;
-    blockptr_t begin, end;
-    for (blockptr_t i = alloc_start; i <= alloc_end; i++) {
+    int64_t begin, end;
+    for (int64_t i = alloc_start; i <= alloc_end; i++) {
         bool allocated;
         if (i == alloc_end) {
             allocated = false;

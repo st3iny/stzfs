@@ -11,7 +11,7 @@
 #include "types.h"
 #include "disk.h"
 
-static int create_cache(bitmap_cache_t* cache, blockptr_t blockptr, blockptr_t length);
+static int create_cache(bitmap_cache_t* cache, int64_t blockptr, int64_t length);
 static int dispose_cache(bitmap_cache_t* cache);
 
 bitmap_cache_t block_bitmap_cache;
@@ -37,7 +37,7 @@ int bitmap_cache_dispose(void) {
     return 0;
 }
 
-static int create_cache(bitmap_cache_t* cache, blockptr_t blockptr, blockptr_t length) {
+static int create_cache(bitmap_cache_t* cache, int64_t blockptr, int64_t length) {
     cache->length = (size_t)length * STZFS_BLOCK_SIZE;
     cache->bitmap = mmap(NULL, cache->length, PROT_READ | PROT_WRITE, MAP_SHARED, disk_get_fd(),
                          (off_t)blockptr * STZFS_BLOCK_SIZE);

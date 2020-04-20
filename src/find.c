@@ -13,8 +13,8 @@
 #include "super_block_cache.h"
 
 // find the inode linked to given path
-int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
-                    inodeptr_t* parent_inodeptr, inode_t* parent_inode, char* last_name) {
+int find_file_inode(const char* file_path, int64_t* inodeptr, inode_t* inode,
+                    int64_t* parent_inodeptr, inode_t* parent_inode, char* last_name) {
     const super_block* sb = super_block_cache;
 
     // start at root inode
@@ -49,7 +49,7 @@ int find_file_inode(const char* file_path, inodeptr_t* inodeptr, inode_t* inode,
             if (parent_inode) *parent_inode = *inode;
             if (last_name) strcpy(last_name, name);
 
-            inodeptr_t found_inodeptr;
+            int64_t found_inodeptr;
             int err = find_name(name, inode, &found_inodeptr);
             if (err) return err;
 
@@ -83,16 +83,16 @@ int find_file_inode2(const char* file_path, file* f, file* parent, char* last_na
 }
 
 // find name in directory inode
-int find_name(const char* name, inode_t* inode, inodeptr_t* found_inodeptr) {
+int find_name(const char* name, inode_t* inode, int64_t* found_inodeptr) {
     if (!M_IS_DIR(inode->mode)) {
         printf("find_name: inode is not a directory\n");
         return -ENOTDIR;
     }
 
     // read directory blocks and search them
-    for (blockptr_t offset = 0; offset < inode->block_count; offset++) {
+    for (int64_t offset = 0; offset < inode->block_count; offset++) {
         dir_block block;
-        blockptr_t blockptr;
+        int64_t blockptr;
         inode_read_data_block(inode, offset, &block, &blockptr);
         if (blockptr == 0) {
             printf("find_name: can't read directory block\n");
@@ -117,7 +117,7 @@ int find_name(const char* name, inode_t* inode, inodeptr_t* found_inodeptr) {
 }
 
 // translate relative inode data block offset to absolute blockptr
-blockptr_t find_inode_data_blockptr(inode_t* inode, blockptr_t offset, bool alloc_sparse) {
+int64_t find_inode_data_blockptr(inode_t* inode, int64_t offset, bool alloc_sparse) {
     if (offset > inode->block_count) {
         printf("find_inode_data_blockptr: relative data block offset out of bounds\n");
         return 0;
@@ -127,7 +127,7 @@ blockptr_t find_inode_data_blockptr(inode_t* inode, blockptr_t offset, bool allo
     }
 
     typedef struct level {
-        blockptr_t blockptr;
+        int64_t blockptr;
         indirect_block block;
     } level;
 
@@ -170,9 +170,9 @@ blockptr_t find_inode_data_blockptr(inode_t* inode, blockptr_t offset, bool allo
     }
 
     if (alloc_sparse && *absolute_blockptr == NULL_BLOCKPTR) {
-        if (block_allocptr(absolute_blockptr)) {
-            printf("find_inode_data_blockptr: could not allocate new sparse file block\n");
-        }
+        int64_t new_blockptr;
+        block_allocptr(&new_blockptr);
+        *absolute_blockptr = new_blockptr;
 
         if (last_level != NULL) {
             block_write(last_level->blockptr, &last_level->block);
@@ -183,18 +183,18 @@ blockptr_t find_inode_data_blockptr(inode_t* inode, blockptr_t offset, bool allo
 }
 
 // find inode blockptrs and store them in the given buffer
-int find_inode_data_blockptrs(inode_t* inode, blockptr_t* blockptrs, blockptr_t length,
-                              blockptr_t offset) {
+int find_inode_data_blockptrs(inode_t* inode, int64_t* blockptrs, int64_t length,
+                              int64_t offset) {
     if (offset + length >= inode->block_count) {
         printf("find_inode_data_blockptrs: relative data block offset out of range\n");
         return -EFAULT;
     }
 
-    const int size = sizeof(blockptr_t);
+    const int size = sizeof(int64_t);
     long long blocks_left = length;
 
-    for (blockptr_t i = offset; i < offset + length; i++) {
-        const blockptr_t blockptr = find_inode_data_blockptr(inode, i, ALLOC_SPARSE_NO);
+    for (int64_t i = offset; i < offset + length; i++) {
+        const int64_t blockptr = find_inode_data_blockptr(inode, i, ALLOC_SPARSE_NO);
         if (blockptr == 0) {
             printf("find_inode_data_blockptrs: invalid blockptr returned\n");
             return -EFAULT;

@@ -3,13 +3,14 @@
 #include <string.h>
 #include <time.h>
 
+#include "direntry.h"
 #include "find.h"
 #include "helpers.h"
 #include "inode.h"
 
 // check if file exists
 int file_exists(const char* path) {
-    inodeptr_t inodeptr, parent_inodeptr;
+    int64_t inodeptr, parent_inodeptr;
     inode_t inode, parent_inode;
     int err = find_file_inode(path, &inodeptr, &inode, &parent_inodeptr, &parent_inode, NULL);
     if (err || inodeptr == 0) {

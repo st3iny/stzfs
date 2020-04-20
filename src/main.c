@@ -17,8 +17,8 @@ int printf_filler(void* buffer, const char *name, const struct stat* stbuf, off_
 
 int main() {
     // definitions
-    const blockptr_t blocks = 4 * 256 * 1024;
-    const inodeptr_t inodes = (const inodeptr_t)pow(2, 20);
+    const int64_t blocks = 4 * 256 * 1024;
+    const int64_t inodes = (const int64_t)pow(2, 20);
 
     // create vm hdd
     disk_create_file(DISK_FILE_PATH, (long long)blocks * STZFS_BLOCK_SIZE);

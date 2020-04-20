@@ -79,7 +79,7 @@ stzfs_error_t inode_append_data_blockptr(inode_t* inode, int64_t blockptr) {
 
     // level struct for indirection convenience
     typedef struct level {
-        int64_t* blockptr;
+        blockptr_t* blockptr;
         indirect_block block;
         bool changed;
     } level;
@@ -90,7 +90,9 @@ stzfs_error_t inode_append_data_blockptr(inode_t* inode, int64_t blockptr) {
     } else if ((offset -= INODE_DIRECT_BLOCKS) < INODE_SINGLE_INDIRECT_BLOCKS) {
         level level1 = {.blockptr = &inode->data_single_indirect};
         if (offset == 0) {
-            block_alloc(level1.blockptr, &level1.block);
+            int64_t new_blockptr;
+            block_alloc(&new_blockptr, &level1.block);
+            *level1.blockptr = new_blockptr;
         } else {
             block_read(*level1.blockptr, &level1.block);
         }
@@ -101,7 +103,9 @@ stzfs_error_t inode_append_data_blockptr(inode_t* inode, int64_t blockptr) {
     } else if ((offset -= INODE_SINGLE_INDIRECT_BLOCKS) < INODE_DOUBLE_INDIRECT_BLOCKS) {
         level level1 = {.blockptr = &inode->data_double_indirect};
         if (offset == 0) {
-            block_alloc(level1.blockptr, &level1.block);
+            int64_t new_blockptr;
+            block_alloc(&new_blockptr, &level1.block);
+            *level1.blockptr = new_blockptr;
         } else {
             block_read(*level1.blockptr, &level1.block);
         }
@@ -109,7 +113,9 @@ stzfs_error_t inode_append_data_blockptr(inode_t* inode, int64_t blockptr) {
         level level2 = {.blockptr = &level1.block.blocks[offset / INODE_SINGLE_INDIRECT_BLOCKS]};
         if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) {
             level1.changed = true;
-            block_alloc(level2.blockptr, &level2.block);
+            int64_t new_blockptr;
+            block_alloc(&new_blockptr, &level2.block);
+            *level2.blockptr = new_blockptr;
         } else {
             block_read(*level2.blockptr, &level2.block);
         }
@@ -121,7 +127,9 @@ stzfs_error_t inode_append_data_blockptr(inode_t* inode, int64_t blockptr) {
     } else if ((offset -= INODE_DOUBLE_INDIRECT_BLOCKS) < INODE_TRIPLE_INDIRECT_BLOCKS) {
         level level1 = {.blockptr = &inode->data_triple_indirect};
         if (offset == 0) {
-            block_alloc(level1.blockptr, &level1.block);
+            int64_t new_blockptr;
+            block_alloc(&new_blockptr, &level1.block);
+            *level1.blockptr = new_blockptr;
         } else {
             block_read(*level1.blockptr, &level1.block);
         }
@@ -129,7 +137,9 @@ stzfs_error_t inode_append_data_blockptr(inode_t* inode, int64_t blockptr) {
         level level2 = {.blockptr = &level1.block.blocks[offset / INODE_DOUBLE_INDIRECT_BLOCKS]};
         if (offset % INODE_DOUBLE_INDIRECT_BLOCKS == 0) {
             level1.changed = true;
-            block_alloc(level2.blockptr, &level2.block);
+            int64_t new_blockptr;
+            block_alloc(&new_blockptr, &level2.block);
+            *level2.blockptr = new_blockptr;
         } else {
             block_read(*level2.blockptr, &level2.block);
         }
@@ -137,7 +147,9 @@ stzfs_error_t inode_append_data_blockptr(inode_t* inode, int64_t blockptr) {
         level level3 = {.blockptr = &level2.block.blocks[(offset % INODE_DOUBLE_INDIRECT_BLOCKS) / INODE_SINGLE_INDIRECT_BLOCKS]};
         if (offset % INODE_SINGLE_INDIRECT_BLOCKS == 0) {
             level2.changed = true;
-            block_alloc(level3.blockptr, &level3.block);
+            int64_t new_blockptr;
+            block_alloc(&new_blockptr, &level3.block);
+            *level3.blockptr = new_blockptr;
         } else {
             block_read(*level3.blockptr, &level3.block);
         }
@@ -325,7 +337,7 @@ stzfs_error_t inode_read(int64_t inodeptr, inode_t* inode) {
     }
 
     // get inode table block
-    blockptr_t inode_table_blockptr = sb->inode_table + inode_table_block_offset;
+    int64_t inode_table_blockptr = sb->inode_table + inode_table_block_offset;
     inode_block inode_table_block;
     block_read(inode_table_blockptr, &inode_table_block);
 
@@ -342,7 +354,7 @@ stzfs_error_t inode_read_data_block(inode_t* inode, int64_t offset, void* block,
         return ERROR;
     }
 
-    blockptr_t blockptr = find_inode_data_blockptr(inode, offset, ALLOC_SPARSE_NO);
+    int64_t blockptr = find_inode_data_blockptr(inode, offset, ALLOC_SPARSE_NO);
     block_read(blockptr, block);
 
     if (blockptr_out != NULL) {
@@ -376,10 +388,10 @@ stzfs_error_t inode_write(int64_t inodeptr, const inode_t* inode) {
 
     const super_block* sb = super_block_cache;
 
-    blockptr_t table_block_offset = inodeptr / INODE_BLOCK_ENTRIES;
+    int64_t table_block_offset = inodeptr / INODE_BLOCK_ENTRIES;
 
     // place inode in table and write back table block
-    blockptr_t table_blockptr = sb->inode_table + table_block_offset;
+    int64_t table_blockptr = sb->inode_table + table_block_offset;
     inode_block table_block;
     block_read(table_blockptr, &table_block);
     table_block.inodes[inodeptr % INODE_BLOCK_ENTRIES] = *inode;
@@ -395,7 +407,7 @@ stzfs_error_t inode_write_data_block(inode_t* inode, int64_t offset, const void*
         return ERROR;
     }
 
-    blockptr_t blockptr = find_inode_data_blockptr(inode, offset, ALLOC_SPARSE_YES);
+    int64_t blockptr = find_inode_data_blockptr(inode, offset, ALLOC_SPARSE_YES);
     block_write(blockptr, block);
     return SUCCESS;
 }

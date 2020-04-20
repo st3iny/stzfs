@@ -43,7 +43,7 @@ typedef struct inode_t {
 
 // group inode and inodeptr for convenience
 typedef struct file {
-    inodeptr_t inodeptr;
+    int64_t inodeptr;
     inode_t inode;
 } file;
 
