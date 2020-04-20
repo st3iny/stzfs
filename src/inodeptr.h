@@ -6,6 +6,5 @@
 
 bool inodeptr_is_valid(int64_t inodeptr);
 bool inodeptr_is_protected(int64_t inodeptr);
-bool inodeptr_is_allocated(int64_t inodeptr);
 
 #endif // STZFS_INODEPTR_H

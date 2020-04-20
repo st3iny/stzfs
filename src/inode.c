@@ -6,7 +6,6 @@
 
 #include "alloc.h"
 #include "bitmap.h"
-#include "bitmap_cache.h"
 #include "block.h"
 #include "blockptr.h"
 #include "error.h"
@@ -26,7 +25,7 @@ stzfs_error_t inode_allocptr(int64_t* inodeptr) {
         return ERROR;
     }
 
-    bitmap_alloc(inodeptr, &inode_bitmap_cache);
+    bitmap_alloc_inode(inodeptr);
 
     // update superblock
     sb->free_inodes--;
@@ -206,7 +205,7 @@ stzfs_error_t inode_free(int64_t inodeptr, inode_t* inode) {
     }
 
     // dealloc inode first
-    bitmap_free(&inode_bitmap_cache, inodeptr);
+    bitmap_free_inode(inodeptr);
 
     // free allocated data blocks in bitmap
     inode_truncate(inode, 0);
@@ -313,7 +312,7 @@ stzfs_error_t inode_read(int64_t inodeptr, inode_t* inode) {
     if (!inodeptr_is_valid(inodeptr)) {
         LOG("invalid inodeptr given");
         return ERROR;
-    } else if (!inodeptr_is_allocated(inodeptr)) {
+    } else if (!bitmap_is_inode_allocated(inodeptr)) {
         LOG("inodeptr is not allocated");
         return ERROR;
     }
@@ -371,7 +370,7 @@ stzfs_error_t inode_write(int64_t inodeptr, const inode_t* inode) {
     if (!inodeptr_is_valid(inodeptr)) {
         LOG("illegal inodeptr given");
         return ERROR;
-    } else if (!inodeptr_is_allocated(inodeptr)) {
+    } else if (!bitmap_is_inode_allocated(inodeptr)) {
         LOG("inodeptr is not allocated");
         return ERROR;
     }

@@ -5,7 +5,6 @@
 
 #include "alloc.h"
 #include "bitmap.h"
-#include "bitmap_cache.h"
 #include "disk.h"
 #include "error.h"
 #include "free.h"
@@ -75,7 +74,7 @@ stzfs_error_t block_allocptr(int64_t* blockptr) {
         error = ERROR;
     }
 
-    if (bitmap_alloc(blockptr, &block_bitmap_cache)) {
+    if (bitmap_alloc_block(blockptr)) {
         LOG("could not allocate blockptr");
         error = ERROR;
     }
@@ -109,7 +108,7 @@ stzfs_error_t block_free(const int64_t* blockptr_arr, size_t length) {
 
     for (size_t offset = 0; offset < length; offset++) {
         sb->free_blocks--;
-        if (bitmap_free(&block_bitmap_cache, blockptr_arr[offset])) {
+        if (bitmap_free_block(blockptr_arr[offset])) {
             LOG("could not free block in block bitmap");
             error = ERROR;
             break;
